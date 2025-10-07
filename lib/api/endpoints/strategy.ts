@@ -20,7 +20,7 @@ export interface StrategyListItem {
   created_at: string;
 }
 
-export interface StrategyItem extends StrategyListItem {}
+export type StrategyItem = StrategyListItem;
 
 export async function listStrategies(): Promise<StrategyListItem[]> {
   return apiRequest({ method: 'GET', url: ENDPOINTS.STRATEGY.LIST });
