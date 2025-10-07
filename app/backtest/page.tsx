@@ -1,8 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
 import { api } from '@/lib/api';
 import BacktestDetailsModal from '../components/BacktestDetailsModal';
 import { SaveStrategyModal } from '../components/SaveStrategyModal';
@@ -11,11 +9,10 @@ import { Terminal } from '../components/backtest/Terminal';
 import { StrategyEditor } from '../components/backtest/StrategyEditor';
 import { BacktestHeader } from '../components/backtest/BacktestHeader';
 import { InfoPanel } from '../components/backtest/InfoPanel';
-import type { CompletedBacktest, DownloadOptions } from '@/types/backtest';
+import type { CompletedBacktest } from '@/types/backtest';
 import type { StrategyListItem } from '@/lib/api/endpoints/strategy';
 import { useTypewriterAnimation } from '@/hooks/useTypewriterAnimation';
 import { useFileUpload } from '@/hooks/backtest/useFileUpload';
-// Local persistence removed; use server strategy APIs instead
 
 export default function BacktestPage() {
   const [isRunning, setIsRunning] = useState(false);
@@ -28,7 +25,6 @@ export default function BacktestPage() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [completedBacktest, setCompletedBacktest] = useState<CompletedBacktest | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadCache, setDownloadCache] = useState<Map<string, Blob>>(new Map());
   const [savedStrategies, setSavedStrategies] = useState<StrategyListItem[]>([]);
@@ -289,182 +285,6 @@ export default function BacktestPage() {
     } catch (error) {
       console.error('Error deleting strategy:', error);
       addTerminalLine('> ❌ Failed to delete strategy');
-    }
-  };
-
-  const simulateBacktest = async () => {
-    if (!strategyName || !startDate || !endDate) {
-      addTerminalLine('> ERROR: Please fill all configuration fields');
-      addInfoMessage('⚠️ Configuration incomplete - fill all fields before running');
-      return;
-    }
-
-    setIsRunning(true);
-    setProgress(0);
-    setElapsedTime(0);
-    startTimeRef.current = Date.now();
-
-    const phases = [
-      { name: 'Initializing', progress: 10, logs: ['> Starting backtest engine...', '> Connecting to data sources...'] },
-      { name: 'Loading Data', progress: 30, logs: ['> Fetching historical data...', `> Period: ${startDate} to ${endDate}`, '> Processing 15,234 candles...'] },
-      { name: 'Running Strategy', progress: 60, logs: ['> Executing strategy logic...', '> Calculating indicators...', '> Generating signals...'] },
-      { name: 'Computing Metrics', progress: 85, logs: ['> Computing performance metrics...', '> Calculating Sharpe ratio...', '> Analyzing drawdowns...'] },
-      { name: 'Finalizing', progress: 100, logs: ['> Generating report...', '> Backtest completed successfully!', '> Results ready for review'] },
-    ];
-
-    for (const phase of phases) {
-      setCurrentPhase(phase.name);
-      setProgress(phase.progress);
-
-      for (const log of phase.logs) {
-        addTerminalLine(log);
-        await new Promise(resolve => setTimeout(resolve, 800));
-      }
-
-      addInfoMessage(`✅ ${phase.name} completed`);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-
-    setIsRunning(false);
-    setCurrentPhase('Completed');
-  };
-
-  const createMockBacktest = async () => {
-    // Parse strategy code first
-    let parsedStrategy: Record<string, unknown>;
-    try {
-      parsedStrategy = JSON.parse(strategyCode);
-    } catch {
-      parsedStrategy = { raw: strategyCode };
-    }
-
-    // Use strategy name from JSON or form, auto-generate if missing
-    const finalStrategyName = strategyName || (typeof parsedStrategy.name === 'string' ? parsedStrategy.name : '') || `Strategy_${Date.now()}`;
-
-    // Auto-generate dates if missing
-    const finalEndDate = endDate || new Date().toISOString().split('T')[0];
-    const finalStartDate = startDate || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-    addTerminalLine('> Creating mock backtest with results...');
-    if (!strategyName) {
-      addTerminalLine(`> Using strategy name from JSON: ${finalStrategyName}`);
-    }
-    if (!startDate || !endDate) {
-      addTerminalLine(`> Using auto-generated dates: ${finalStartDate} to ${finalEndDate}`);
-    }
-
-    try {
-      // Update parsed strategy with final name
-      parsedStrategy.name = finalStrategyName;
-
-      // Create strategy first
-      const { data: strategy, error: strategyError } = await supabase
-        .from('strategies')
-        .insert({
-          name: finalStrategyName,
-          config: parsedStrategy,
-          description: (typeof parsedStrategy.description === 'string' ? parsedStrategy.description : '') || 'Mock strategy for testing'
-        })
-        .select()
-        .single();
-
-      if (strategyError) {
-        throw strategyError;
-      }
-
-      // Generate mock results
-      const nTrades = Math.floor(Math.random() * 50) + 20;
-      const nWins = Math.floor(nTrades * (0.4 + Math.random() * 0.3));
-      const nLosses = nTrades - nWins;
-      const winrate = nWins / nTrades;
-      const totalPnl = (Math.random() - 0.3) * 20;
-      const sharpeRatio = (Math.random() * 2) + 0.5;
-
-      // Create backtest
-      const { data: backtest, error: backtestError } = await supabase
-        .from('backtests')
-        .insert({
-          strategy_id: strategy.id,
-          job_id: `mock_${Date.now()}`,
-          status: 'finished',
-          n_trades: nTrades,
-          n_wins: nWins,
-          n_losses: nLosses,
-          winrate: winrate,
-          total_pnl: totalPnl,
-          sharpe_ratio: sharpeRatio,
-          max_drawdown: Math.random() * 15 + 5,
-          profit_factor: (Math.random() * 2) + 0.8,
-          strategy_code: parsedStrategy
-        })
-        .select()
-        .single();
-
-      if (backtestError) {
-        throw backtestError;
-      }
-
-      // Create mock trades
-      const trades = [];
-      const startPrice = 45000 + Math.random() * 5000;
-      let currentPrice = startPrice;
-      const daysDiff = Math.floor((new Date(finalEndDate).getTime() - new Date(finalStartDate).getTime()) / (1000 * 60 * 60 * 24));
-
-      for (let i = 0; i < nTrades; i++) {
-        const isWin = i < nWins;
-        const side = Math.random() > 0.5 ? 'long' : 'short';
-        const entryPrice = currentPrice;
-        const priceChange = isWin
-          ? (0.005 + Math.random() * 0.015) * (side === 'long' ? 1 : -1)
-          : -(0.003 + Math.random() * 0.012) * (side === 'long' ? 1 : -1);
-
-        const exitPrice = entryPrice * (1 + priceChange);
-        const pnl = (exitPrice - entryPrice) * (side === 'long' ? 1 : -1);
-
-        const hoursOffset = Math.floor((daysDiff * 24 / nTrades) * i) + Math.floor(Math.random() * 4);
-        const entryTime = new Date(new Date(finalStartDate).getTime() + hoursOffset * 60 * 60 * 1000);
-        const duration = 30 + Math.floor(Math.random() * 300);
-        const exitTime = new Date(entryTime.getTime() + duration * 60 * 1000);
-
-        currentPrice = exitPrice;
-
-        trades.push({
-          backtest_id: backtest.id,
-          trade_number: i + 1,
-          entry_time: entryTime.toISOString(),
-          entry_price: entryPrice,
-          exit_time: exitTime.toISOString(),
-          exit_price: exitPrice,
-          side: side,
-          pnl: pnl,
-          duration_minutes: duration
-        });
-      }
-
-      // Insert trades in batches
-      const { error: tradesError } = await supabase
-        .from('trades')
-        .insert(trades);
-
-      if (tradesError) {
-        throw tradesError;
-      }
-
-      addTerminalLine(`> ✅ Mock backtest created successfully!`);
-      addTerminalLine(`> Backtest ID: ${backtest.id}`);
-      addTerminalLine(`> Total trades: ${nTrades}`);
-      addTerminalLine(`> Winrate: ${(winrate * 100).toFixed(1)}%`);
-      addTerminalLine(`> Total PnL: ${totalPnl.toFixed(2)}%`);
-      addTerminalLine('> Results are ready for review →');
-
-      // Set completed backtest data for display
-      setCompletedBacktest(backtest);
-      setCurrentPhase('Completed');
-
-    } catch (error) {
-      console.error('Error creating mock backtest:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addTerminalLine(`> ❌ ERROR: ${errorMessage}`);
     }
   };
 
