@@ -57,33 +57,13 @@ export function InfoPanel({
         <h2 className="text-white font-semibold flex items-center gap-2">
           <span className="text-xl">📊</span>
           <span>
-            {completedBacktest ? 'Results Summary' : isRunning ? 'Analysis In Progress' : 'Backtest Information'}
+            {isRunning ? 'Analysis In Progress' : 'Backtest Information'}
           </span>
         </h2>
       </div>
 
       <div className="flex-1 p-6 overflow-y-auto custom-scrollbar relative" ref={infoPanelRef}>
-        {!isRunning && currentPhase !== 'Completed' ? (
-          <ConfigurationView
-            strategyName={strategyName}
-            setStrategyName={setStrategyName}
-            startDate={startDate}
-            setStartDate={setStartDate}
-            endDate={endDate}
-            setEndDate={setEndDate}
-            runServerBacktest={runServerBacktest}
-            isRunning={isRunning}
-          />
-        ) : completedBacktest ? (
-          <ResultsView
-            completedBacktest={completedBacktest}
-            handleDownload={handleDownload}
-            setShowDetailsModal={setShowDetailsModal}
-            isDownloading={isDownloading}
-            handleSaveStrategy={handleSaveStrategy}
-            handleLoadStrategy={handleLoadStrategy}
-          />
-        ) : (
+        {isRunning ? (
           <RunningView
             infoMessages={infoMessages}
             currentPhase={currentPhase}
@@ -91,6 +71,17 @@ export function InfoPanel({
             formatTime={formatTime}
             progress={progress}
             isRunning={isRunning}
+          />
+        ) : (
+          <ConfigurationView
+            runServerBacktest={runServerBacktest}
+            isRunning={isRunning}
+            completedBacktest={completedBacktest}
+            handleDownload={handleDownload}
+            setShowDetailsModal={setShowDetailsModal}
+            isDownloading={isDownloading}
+            handleSaveStrategy={handleSaveStrategy}
+            handleLoadStrategy={handleLoadStrategy}
           />
         )}
       </div>
@@ -109,23 +100,23 @@ export function InfoPanel({
 }
 
 function ConfigurationView({
-  strategyName,
-  setStrategyName,
-  startDate,
-  setStartDate,
-  endDate,
-  setEndDate,
   runServerBacktest,
   isRunning,
+  completedBacktest,
+  handleDownload,
+  setShowDetailsModal,
+  isDownloading,
+  handleSaveStrategy,
+  handleLoadStrategy,
 }: {
-  strategyName: string;
-  setStrategyName: (name: string) => void;
-  startDate: string;
-  setStartDate: (date: string) => void;
-  endDate: string;
-  setEndDate: (date: string) => void;
   runServerBacktest: () => void;
   isRunning: boolean;
+  completedBacktest: CompletedBacktest | null;
+  handleDownload: () => void;
+  setShowDetailsModal: (show: boolean) => void;
+  isDownloading: boolean;
+  handleSaveStrategy: () => void;
+  handleLoadStrategy: () => void;
 }) {
   return (
     <>
@@ -172,54 +163,84 @@ function ConfigurationView({
       <MetricsInfo />
 
       {/* Configuration Form */}
-      <div className="mb-6">
-        <h3 className="text-sm font-semibold text-gray-400 mb-3">
-          Настройки бэктеста
-        </h3>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs text-gray-400 mb-2">Strategy Name</label>
-            <input
-              type="text"
-              value={strategyName}
-              onChange={(e) => setStrategyName(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-cyan-500"
-              placeholder="My Trading Strategy"
-            />
-          </div>
-
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-gray-400 mb-2">Start Date</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-2">End Date</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-          </div>
-
-
+      {/* Action Buttons */}
+      <div className="mb-6 space-y-3">
+        <button
+          onClick={runServerBacktest}
+          disabled={isRunning}
+          className="w-full px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          🌐 Run Backtest (Server)
+        </button>
+        
+        <div className="grid grid-cols-2 gap-3">
           <button
-            onClick={runServerBacktest}
-            disabled={isRunning}
-            className="w-full px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleSaveStrategy}
+            disabled={!completedBacktest}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            🌐 Run Backtest (Server)
+            💾 Save Strategy
+          </button>
+          <button
+            onClick={handleLoadStrategy}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors font-medium"
+          >
+            📂 Load Strategy
           </button>
         </div>
       </div>
+
+      {/* Results Section - Show when backtest is completed */}
+      {completedBacktest && (
+        <div className="space-y-6">
+          <div className="bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-cyan-500/50 rounded-xl p-6">
+            <h3 className="text-lg font-bold text-cyan-400 mb-4">📊 Results</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-gray-900/50 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Total PnL</div>
+                <div className={`text-2xl font-bold ${completedBacktest.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {completedBacktest.total_pnl >= 0 ? '+' : ''}{completedBacktest.total_pnl.toFixed(2)}%
+                </div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Winrate</div>
+                <div className="text-2xl font-bold text-cyan-400">
+                  {(completedBacktest.winrate * 100).toFixed(1)}%
+                </div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Trades</div>
+                <div className="text-2xl font-bold text-white">
+                  {completedBacktest.n_trades}
+                </div>
+              </div>
+              <div className="bg-gray-900/50 rounded-lg p-3">
+                <div className="text-xs text-gray-400 mb-1">Sharpe Ratio</div>
+                <div className="text-2xl font-bold text-purple-400">
+                  {completedBacktest.sharpe_ratio.toFixed(2)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Action buttons for results */}
+          <div className="space-y-3">
+            <button
+              onClick={() => setShowDetailsModal(true)}
+              className="w-full px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 hover:scale-[1.02]"
+            >
+              📈 View Details
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={isDownloading}
+              className="w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-bold transition-all shadow-lg disabled:opacity-50"
+            >
+              {isDownloading ? '⏳ Downloading...' : '📥 Download Results'}
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -357,7 +378,8 @@ function RunningView({
   );
 }
 
-function ResultsView({
+// ResultsView removed - now integrated into ConfigurationView
+function ResultsViewLEGACY({
   completedBacktest,
   handleDownload,
   setShowDetailsModal,

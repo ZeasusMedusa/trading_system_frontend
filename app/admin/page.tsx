@@ -24,7 +24,9 @@ export default function AdminPage() {
 
   useEffect(() => {
     // Check if user is admin
+    console.log('Admin check:', { user, loading, is_admin: user?.is_admin });
     if (!loading && (!user || !user.is_admin)) {
+      console.warn('Access denied: not an admin. Redirecting to home.');
       router.push('/');
     }
   }, [user, loading, router]);

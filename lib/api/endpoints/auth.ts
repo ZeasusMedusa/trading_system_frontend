@@ -59,40 +59,19 @@ export async function getCurrentUser(): Promise<User> {
     return mockGetMe();
   }
 
-  // No /auth/me endpoint on backend: derive user info from JWT if possible
-  const token = getAuthToken();
-  if (!token) {
-    throw new Error('Not authenticated');
-  }
-
-  // Try to decode JWT payload to extract username/claims
-  let username = 'user';
-  let is_admin = false;
-  try {
-    const parts = token.split('.');
-    if (parts.length === 3) {
-      const payloadJson = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-      username = payloadJson.username || payloadJson.sub || username;
-      is_admin = !!(payloadJson.is_admin || payloadJson.admin || payloadJson.isAdmin);
-    }
-  } catch (_e) {
-    // ignore decode errors; fall back to defaults
-  }
-
-  const user: User = {
-    id: 0,
-    username,
-    is_admin,
-    activated: true,
-    created_at: new Date().toISOString(),
-  };
-  return user;
+  // Use /auth/me endpoint to get full user info from backend
+  return apiRequest<User>({
+    method: 'GET',
+    url: ENDPOINTS.AUTH.ME,
+  });
 }
 
 /**
  * Check if user is authenticated
  */
 export function isAuthenticated(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === 'undefined') {
+    return false;
+  }
   return !!localStorage.getItem('auth_token');
 }

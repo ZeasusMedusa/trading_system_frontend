@@ -586,28 +586,42 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 hover:border-cyan-500/50 transition-colors">
             <div className="text-gray-400 text-sm mb-2">Total Backtests</div>
-            <div className="text-3xl font-bold text-white">{backtests.length}</div>
+            <div className="text-3xl font-bold text-white">{backtests.length + savedStrategies.length}</div>
           </div>
           <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 hover:border-green-500/50 transition-colors">
             <div className="text-gray-400 text-sm mb-2">Avg Winrate</div>
             <div className="text-3xl font-bold text-green-400">
-              {backtests.length > 0
-                ? ((backtests.reduce((acc, bt) => acc + (bt.winrate || 0), 0) / backtests.length) * 100).toFixed(1)
-                : '0'}%
+              {(() => {
+                const allBacktests = [...backtests, ...savedStrategies.map(s => ({ 
+                  winrate: ((s.metrics as any)?.winrate || 0) 
+                }))];
+                return allBacktests.length > 0
+                  ? ((allBacktests.reduce((acc, bt) => acc + (bt.winrate || 0), 0) / allBacktests.length) * 100).toFixed(1)
+                  : '0';
+              })()}%
             </div>
           </div>
           <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 hover:border-blue-500/50 transition-colors">
             <div className="text-gray-400 text-sm mb-2">Avg Sharpe</div>
             <div className="text-3xl font-bold text-blue-400">
-              {backtests.length > 0
-                ? (backtests.reduce((acc, bt) => acc + (bt.sharpe_ratio || 0), 0) / backtests.length).toFixed(2)
-                : '0.00'}
+              {(() => {
+                const allBacktests = [...backtests, ...savedStrategies.map(s => ({ 
+                  sharpe_ratio: ((s.metrics as any)?.sharpe_ratio || 0) 
+                }))];
+                return allBacktests.length > 0
+                  ? (allBacktests.reduce((acc, bt) => acc + (bt.sharpe_ratio || 0), 0) / allBacktests.length).toFixed(2)
+                  : '0.00';
+              })()}
             </div>
           </div>
           <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 hover:border-purple-500/50 transition-colors">
             <div className="text-gray-400 text-sm mb-2">Total Trades</div>
             <div className="text-3xl font-bold text-purple-400">
-              {backtests.reduce((acc, bt) => acc + (bt.n_trades || 0), 0).toLocaleString()}
+              {(() => {
+                const serverTrades = backtests.reduce((acc, bt) => acc + (bt.n_trades || 0), 0);
+                const savedTrades = savedStrategies.reduce((acc, s) => acc + ((s.metrics as any)?.n_trades || 0), 0);
+                return (serverTrades + savedTrades).toLocaleString();
+              })()}
             </div>
           </div>
         </div>
@@ -617,7 +631,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-white">📈 Backtest History</h2>
             <div className="text-sm text-gray-400">
-              Showing {filteredBacktests.length} of {backtests.length} backtests
+              Showing {filteredBacktests.length} of {backtests.length + savedStrategies.length} backtests
             </div>
           </div>
 

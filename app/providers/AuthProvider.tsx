@@ -35,6 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (api.auth.isAuthenticated()) {
         const currentUser = await api.auth.getCurrentUser();
         setUser(currentUser);
+        // Save user to localStorage for persistence
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('user', JSON.stringify(currentUser));
+        }
       }
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -50,6 +54,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await api.auth.login({ username, password });
       const currentUser = await api.auth.getCurrentUser();
       setUser(currentUser);
+      
+      // Save user to localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('user', JSON.stringify(currentUser));
+      }
+      
       // Mirror token to cookie for middleware to enforce SSR route protection
       if (typeof document !== 'undefined') {
         const token = localStorage.getItem('auth_token');
@@ -67,6 +77,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function logout() {
     setUser(null);
     api.auth.logout();
+    
+    // Clear user from localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('user');
+    }
+    
     if (typeof document !== 'undefined') {
       // Delete cookie by setting Max-Age=0
       document.cookie = 'auth_token=; Path=/; Max-Age=0; SameSite=Lax';
@@ -77,6 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const currentUser = await api.auth.getCurrentUser();
       setUser(currentUser);
+      // Update user in localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('user', JSON.stringify(currentUser));
+      }
     } catch (error) {
       console.error('Failed to refresh user:', error);
       logout();
