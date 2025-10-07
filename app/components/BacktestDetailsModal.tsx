@@ -46,7 +46,7 @@ export default function BacktestDetailsModal({
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'bars' | 'bars_buy' | 'bars_sell' | 'code' | 'metrics'>(
-    isSaved ? 'metrics' : (strategy_type === 'dual' ? 'bars' : 'bars')
+    'metrics' // Always default to metrics tab
   );
   const [strategyCode, setStrategyCode] = useState<Record<string, unknown> | null>(null);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -147,22 +147,25 @@ export default function BacktestDetailsModal({
   };
 
   const loadStrategyCode = async () => {
-    // For saved strategies, use config prop
-    if (isSaved) {
-      setStrategyCode(config || null);
+    // If config is provided via props, use it directly
+    if (config) {
+      setStrategyCode(config);
       return;
     }
     
-    const { data, error } = await supabase
-      .from('backtests')
-      .select('strategy_code')
-      .eq('id', backtestId)
-      .single();
+    // Otherwise try to load from Supabase (for old backtests)
+    if (!isSaved) {
+      const { data, error } = await supabase
+        .from('backtests')
+        .select('strategy_code')
+        .eq('id', backtestId)
+        .single();
 
-    if (error) {
-      console.error('Error loading strategy code:', error);
-    } else {
-      setStrategyCode(data?.strategy_code || null);
+      if (error) {
+        console.error('Error loading strategy code:', error);
+      } else {
+        setStrategyCode(data?.strategy_code || null);
+      }
     }
   };
 
@@ -292,21 +295,19 @@ export default function BacktestDetailsModal({
 
           {/* Tabs */}
           <div className="flex gap-2">
-            {/* Show Metrics tab for saved strategies */}
-            {isSaved && (
-              <button
-                onClick={() => setActiveTab('metrics')}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
-                  activeTab === 'metrics'
-                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
-                    : 'text-gray-400 hover:text-gray-300'
-                }`}
-              >
-                📊 Metrics
-              </button>
-            )}
+            {/* Metrics tab - always available */}
+            <button
+              onClick={() => setActiveTab('metrics')}
+              className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                activeTab === 'metrics'
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              📊 Metrics
+            </button>
             
-            {/* Show Bars tabs for non-saved strategies */}
+            {/* Show Bars tabs only for non-saved strategies (they have bars data) */}
             {!isSaved && strategy_type === 'single' && (
               <button
                 onClick={() => setActiveTab('bars')}
@@ -540,7 +541,7 @@ export default function BacktestDetailsModal({
         {/* Footer */}
         <div className="p-6 border-t border-gray-700 flex justify-between items-center">
           <div className="text-sm text-gray-400">
-            Всего сделок: <span className="text-white font-semibold">{trades.length}</span>
+            Всего сделок: <span className="text-white font-semibold">{(analytics as any)?.n_trades || trades.length || 0}</span>
           </div>
           <div className="flex items-center gap-3">
             {/* Download button with dropdown - only for server backtests */}

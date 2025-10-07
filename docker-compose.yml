@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: smiio_postgres
+    environment:
+      POSTGRES_USER: smiio_user
+      POSTGRES_PASSWORD: smiio_password
+      POSTGRES_DB: smiio_backtest
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./supabase/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - smiio_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smiio_user -d smiio_backtest"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for job queue and caching
+  redis:
+    image: redis:7-alpine
+    container_name: smiio_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - smiio_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend (Python FastAPI)
+  backend:
+    build:
+      context: ../smiio-backend  # Adjust path to your backend directory
+      dockerfile: Dockerfile
+    container_name: smiio_backend
+    environment:
+      # Database
+      DATABASE_URL: postgresql://smiio_user:smiio_password@postgres:5432/smiio_backtest
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      # JWT
+      SECRET_KEY: your-secret-key-change-in-production
+      ACCESS_TOKEN_EXPIRE_MINUTES: 10080
+      # API
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smiio_network
+    volumes:
+      - ../smiio-backend:/app  # Mount for development
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smiio_frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      # Supabase (if needed)
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - smiio_network
+    volumes:
+      - .:/app  # Mount for development
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+
+networks:
+  smiio_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+

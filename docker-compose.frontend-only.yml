@@ -1,0 +1,33 @@
+version: '3.8'
+
+# Конфигурация ТОЛЬКО для фронтенда
+# Бэкенд должен быть запущен отдельно на том же сервере
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: smiio_frontend
+    restart: always
+    environment:
+      # Используем host.docker.internal для доступа к бэкенду на хосте
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://host.docker.internal:8000}
+      NODE_ENV: production
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    extra_hosts:
+      # Позволяет достучаться до localhost хост-машины
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+

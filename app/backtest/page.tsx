@@ -650,6 +650,9 @@ export default function BacktestPage() {
           bars={completedBacktest.bars}
           bars_buy={completedBacktest.bars_buy}
           bars_sell={completedBacktest.bars_sell}
+          isSaved={false}
+          analytics={completedBacktest.analytics}
+          config={completedBacktest.strategy_code}
         />
       )}
 
