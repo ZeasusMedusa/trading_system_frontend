@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import BacktestDetailsModal from './components/BacktestDetailsModal';
 import { useAuth } from './providers/AuthProvider';
+import { getSavedStrategies, getSavedStrategy, deleteSavedStrategy, cleanupOldBarsData } from '@/lib/strategies';
+import type { SavedStrategy } from '@/types/backtest';
 
 interface Backtest {
   id: string;
@@ -49,16 +51,18 @@ export default function DashboardPage() {
   const [showModal, setShowModal] = useState(false);
   const [displayedText, setDisplayedText] = useState('');
   const [dots, setDots] = useState('');
+  const [savedStrategies, setSavedStrategies] = useState<SavedStrategy[]>([]);
 
   useEffect(() => {
     loadBacktests();
     loadFolders();
+    loadSavedStrategies();
   }, []);
 
   useEffect(() => {
     applyFilters();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [backtests, searchQuery, sortBy, filterProfitable, selectedFolder]);
+  }, [backtests, savedStrategies, searchQuery, sortBy, filterProfitable, selectedFolder]);
 
   // Typewriter effect for title
   useEffect(() => {
@@ -119,7 +123,9 @@ export default function DashboardPage() {
         .eq('status', 'finished')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
       setBacktests(data || []);
     } catch (err) {
       console.error('Error loading backtests:', err);
@@ -135,15 +141,31 @@ export default function DashboardPage() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
       setFolders(data || []);
     } catch (err) {
       console.error('Error loading folders:', err);
     }
   };
 
+  const loadSavedStrategies = () => {
+    try {
+      // Clean up old bars data (older than 1 week)
+      cleanupOldBarsData();
+      
+      const strategies = getSavedStrategies();
+      setSavedStrategies(strategies);
+    } catch (error) {
+      console.error('Error loading saved strategies:', error);
+    }
+  };
+
   const createFolder = async () => {
-    if (!newFolderName.trim()) return;
+    if (!newFolderName.trim()) {
+      return;
+    }
 
     const colors = ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#a855f7', '#14b8a6', '#f97316'];
     const usedColors = folders.map(f => f.color);
@@ -164,7 +186,9 @@ export default function DashboardPage() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       setFolders(prev => [data, ...prev]);
       setNewFolderName('');
@@ -181,7 +205,9 @@ export default function DashboardPage() {
         .delete()
         .eq('id', folderId);
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       setFolders(prev => prev.filter(f => f.id !== folderId));
       if (selectedFolder === folderId) {
@@ -195,7 +221,9 @@ export default function DashboardPage() {
   const toggleFolder = async (backtestId: string, folderId: string | null) => {
     try {
       const backtest = backtests.find(bt => bt.id === backtestId);
-      if (!backtest) return;
+      if (!backtest) {
+        return;
+      }
 
       let newFolderIds: string[];
 
@@ -218,7 +246,9 @@ export default function DashboardPage() {
         .update({ folder_ids: newFolderIds })
         .eq('id', backtestId);
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       // Update local state
       setBacktests(prev =>
@@ -229,28 +259,72 @@ export default function DashboardPage() {
     }
   };
 
-  const deleteBacktest = async (backtestId: string) => {
+  const deleteBacktest = async (backtestId: string, isSaved?: boolean, source?: 'local' | 'server') => {
     if (!confirm('Вы уверены что хотите удалить этот бэктест? Это действие нельзя отменить.')) {
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('backtests')
-        .delete()
-        .eq('id', backtestId);
+      // Check if this is a saved strategy
+      if (isSaved && source === 'local') {
+        // Delete from localStorage
+        const success = await deleteSavedStrategy(backtestId);
+        if (success) {
+          // Reload saved strategies
+          setSavedStrategies(getSavedStrategies());
+          console.log('Saved strategy deleted:', backtestId);
+        } else {
+          console.error('Failed to delete saved strategy:', backtestId);
+        }
+      } else {
+        // Delete from Supabase
+        const { error } = await supabase
+          .from('backtests')
+          .delete()
+          .eq('id', backtestId);
 
-      if (error) throw error;
+        if (error) {
+          throw error;
+        }
 
-      // Update local state
-      setBacktests(prev => prev.filter(bt => bt.id !== backtestId));
+        // Update local state
+        setBacktests(prev => prev.filter(bt => bt.id !== backtestId));
+      }
     } catch (err) {
       console.error('Error deleting backtest:', err);
     }
   };
 
   const applyFilters = () => {
-    let filtered = [...backtests];
+    // Combine server backtests with saved strategies
+    const serverBacktests = backtests.map(bt => ({
+      ...bt,
+      isSaved: false,
+      source: 'server' as const
+    }));
+    
+    const savedBacktests = savedStrategies.map(strategy => ({
+      id: strategy.id,
+      created_at: strategy.createdAt,
+      strategy_id: strategy.id,
+      job_id: strategy.backtestData.id,
+      status: 'finished',
+      n_trades: strategy.backtestData.n_trades,
+      n_wins: strategy.backtestData.n_wins,
+      n_losses: strategy.backtestData.n_losses,
+      winrate: strategy.backtestData.winrate,
+      total_pnl: strategy.backtestData.total_pnl,
+      sharpe_ratio: strategy.backtestData.sharpe_ratio,
+      max_drawdown: strategy.backtestData.max_drawdown,
+      profit_factor: strategy.backtestData.profit_factor,
+      folder_ids: [],
+      strategies: { name: strategy.name },
+      isSaved: true,
+      source: 'local' as const,
+      description: strategy.description
+    }));
+    
+    let filtered = [...serverBacktests, ...savedBacktests];
 
     // Folder filter
     if (selectedFolder) {
@@ -635,6 +709,11 @@ export default function DashboardPage() {
                         <h3 className="text-xl font-semibold text-white">
                           {backtest.strategies?.name || 'Unknown Strategy'}
                         </h3>
+                        {backtest.isSaved && (
+                          <span className="px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full border border-green-500/30">
+                            💾 Saved
+                          </span>
+                        )}
                         {backtest.folder_ids && backtest.folder_ids.length > 0 && (
                           <div className="flex gap-1">
                             {backtest.folder_ids.map(folderId => {
@@ -660,6 +739,11 @@ export default function DashboardPage() {
                           minute: '2-digit'
                         })}
                       </p>
+                      {backtest.description && (
+                        <p className="text-xs text-gray-500 mt-1 italic">
+                          {backtest.description}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -680,58 +764,62 @@ export default function DashboardPage() {
 
                         {/* Dropdown menu */}
                         <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl opacity-0 invisible group-hover/actions:opacity-100 group-hover/actions:visible transition-all z-10 min-w-[200px]">
-                          {/* Move to folder */}
-                          <div className="p-2 border-b border-gray-700">
-                            <div className="text-xs text-gray-500 px-2 py-1 mb-1">Папки</div>
-                            {folders.length === 0 ? (
-                              <div className="px-3 py-2 text-xs text-gray-500 text-center">
-                                Нет папок
-                              </div>
-                            ) : (
-                              <>
-                                {folders.map((folder) => {
-                                  const isInFolder = backtest.folder_ids?.includes(folder.id);
-                                  return (
+                          {/* Move to folder - only for server backtests */}
+                          {!backtest.isSaved && (
+                            <div className="p-2 border-b border-gray-700">
+                              <div className="text-xs text-gray-500 px-2 py-1 mb-1">Папки</div>
+                              {folders.length === 0 ? (
+                                <div className="px-3 py-2 text-xs text-gray-500 text-center">
+                                  Нет папок
+                                </div>
+                              ) : (
+                                <>
+                                  {folders.map((folder) => {
+                                    const isInFolder = backtest.folder_ids?.includes(folder.id);
+                                    return (
+                                      <button
+                                        key={folder.id}
+                                        onClick={() => toggleFolder(backtest.id, folder.id)}
+                                        className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded transition-colors flex items-center gap-2"
+                                      >
+                                        <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                                          isInFolder
+                                            ? 'bg-cyan-500 border-cyan-500'
+                                            : 'border-gray-600'
+                                        }`}>
+                                          {isInFolder && (
+                                            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                          )}
+                                        </div>
+                                        <div
+                                          className="w-3 h-3 rounded-full"
+                                          style={{ backgroundColor: folder.color }}
+                                        ></div>
+                                        {folder.name}
+                                      </button>
+                                    );
+                                  })}
+                                  {backtest.folder_ids && backtest.folder_ids.length > 0 && (
                                     <button
-                                      key={folder.id}
-                                      onClick={() => toggleFolder(backtest.id, folder.id)}
-                                      className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded transition-colors flex items-center gap-2"
+                                      onClick={() => toggleFolder(backtest.id, null)}
+                                      className="w-full text-left px-3 py-2 text-sm text-gray-400 hover:bg-gray-700 rounded transition-colors mt-1"
                                     >
-                                      <div className={`w-4 h-4 rounded border flex items-center justify-center ${
-                                        isInFolder
-                                          ? 'bg-cyan-500 border-cyan-500'
-                                          : 'border-gray-600'
-                                      }`}>
-                                        {isInFolder && (
-                                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                          </svg>
-                                        )}
-                                      </div>
-                                      <div
-                                        className="w-3 h-3 rounded-full"
-                                        style={{ backgroundColor: folder.color }}
-                                      ></div>
-                                      {folder.name}
+                                      ✕ Убрать из всех папок
                                     </button>
-                                  );
-                                })}
-                                {backtest.folder_ids && backtest.folder_ids.length > 0 && (
-                                  <button
-                                    onClick={() => toggleFolder(backtest.id, null)}
-                                    className="w-full text-left px-3 py-2 text-sm text-gray-400 hover:bg-gray-700 rounded transition-colors mt-1"
-                                  >
-                                    ✕ Убрать из всех папок
-                                  </button>
-                                )}
-                              </>
-                            )}
-                          </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
 
                           {/* Delete */}
                           <button
-                            onClick={() => deleteBacktest(backtest.id)}
-                            className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-b-lg transition-colors flex items-center gap-2"
+                            onClick={() => deleteBacktest(backtest.id, backtest.isSaved, backtest.source)}
+                            className={`w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-2 ${
+                              backtest.isSaved ? 'rounded-lg p-3' : 'rounded-b-lg'
+                            }`}
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -775,7 +863,38 @@ export default function DashboardPage() {
                     </div>
                     <button
                       onClick={() => {
-                        setSelectedBacktest(backtest);
+                        // Load full data for saved strategies
+                        if (backtest.isSaved && backtest.source === 'local') {
+                          console.log('Loading saved strategy:', backtest.id);
+                          const fullStrategy = getSavedStrategy(backtest.id);
+                          console.log('Full strategy loaded:', fullStrategy);
+                          
+                          if (fullStrategy) {
+                            // Update backtest with full data
+                            const fullBacktest = {
+                              ...backtest,
+                              analytics: fullStrategy.backtestData.analytics,
+                              bars: fullStrategy.backtestData.bars,
+                              bars_buy: fullStrategy.backtestData.bars_buy,
+                              bars_sell: fullStrategy.backtestData.bars_sell,
+                              strategy_type: fullStrategy.backtestData.strategy_type,
+                              strategy_code: fullStrategy.strategyCode,
+                            };
+                            
+                            console.log('Full backtest data:', {
+                              bars: fullBacktest.bars?.length || 0,
+                              bars_buy: fullBacktest.bars_buy?.length || 0,
+                              bars_sell: fullBacktest.bars_sell?.length || 0,
+                            });
+                            
+                            setSelectedBacktest(fullBacktest);
+                          } else {
+                            console.log('Full strategy not found, using cached data');
+                            setSelectedBacktest(backtest);
+                          }
+                        } else {
+                          setSelectedBacktest(backtest);
+                        }
                         setShowModal(true);
                       }}
                       className="text-cyan-400 hover:text-cyan-300 text-sm font-semibold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -802,6 +921,12 @@ export default function DashboardPage() {
           }}
           backtestId={selectedBacktest.id}
           strategyName={selectedBacktest.strategies?.name || 'Unknown Strategy'}
+          strategy_type={selectedBacktest.strategy_type}
+          bars={selectedBacktest.bars}
+          bars_buy={selectedBacktest.bars_buy}
+          bars_sell={selectedBacktest.bars_sell}
+          isSaved={selectedBacktest.isSaved}
+          analytics={selectedBacktest.analytics}
         />
       )}
     </main>

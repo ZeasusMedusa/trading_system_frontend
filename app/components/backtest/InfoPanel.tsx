@@ -23,6 +23,9 @@ interface InfoPanelProps {
   progress: number;
   elapsedTime: number;
   formatTime: (seconds: number) => string;
+  isDownloading: boolean;
+  handleSaveStrategy: () => void;
+  handleLoadStrategy: () => void;
 }
 
 export function InfoPanel({
@@ -46,6 +49,9 @@ export function InfoPanel({
   progress,
   elapsedTime,
   formatTime,
+  isDownloading,
+  handleSaveStrategy,
+  handleLoadStrategy,
 }: InfoPanelProps) {
   return (
     <div className="flex flex-col bg-gradient-to-br from-gray-900/80 to-gray-950/80 backdrop-blur-sm border border-blue-500/30 rounded-2xl overflow-hidden shadow-2xl shadow-blue-500/20">
@@ -76,6 +82,9 @@ export function InfoPanel({
             completedBacktest={completedBacktest}
             handleDownload={handleDownload}
             setShowDetailsModal={setShowDetailsModal}
+            isDownloading={isDownloading}
+            handleSaveStrategy={handleSaveStrategy}
+            handleLoadStrategy={handleLoadStrategy}
           />
         ) : (
           <RunningView
@@ -366,10 +375,16 @@ function ResultsView({
   completedBacktest,
   handleDownload,
   setShowDetailsModal,
+  isDownloading,
+  handleSaveStrategy,
+  handleLoadStrategy,
 }: {
   completedBacktest: CompletedBacktest;
   handleDownload: () => void;
   setShowDetailsModal: (show: boolean) => void;
+  isDownloading: boolean;
+  handleSaveStrategy: () => void;
+  handleLoadStrategy: () => void;
 }) {
   return (
     <>
@@ -433,15 +448,43 @@ function ResultsView({
       <div className="flex gap-3">
         <button
           onClick={handleDownload}
-          className="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-purple-500/30 hover:shadow-purple-500/50 hover:scale-[1.02]"
+          disabled={isDownloading}
+          className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all shadow-lg ${
+            isDownloading
+              ? 'bg-gray-600 text-gray-300 cursor-not-allowed'
+              : 'bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white shadow-purple-500/30 hover:shadow-purple-500/50 hover:scale-[1.02]'
+          }`}
         >
-          📥 Download Results
+          {isDownloading ? (
+            <span className="flex items-center justify-center gap-2">
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+              Downloading...
+            </span>
+          ) : (
+            '📥 Download Results'
+          )}
         </button>
         <button
           onClick={() => setShowDetailsModal(true)}
           className="flex-1 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 hover:scale-[1.02]"
         >
           🔍 View Details
+        </button>
+      </div>
+
+      {/* Strategy Management */}
+      <div className="flex gap-3 mt-4">
+        <button
+          onClick={handleSaveStrategy}
+          className="flex-1 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-green-500/30 hover:shadow-green-500/50 hover:scale-[1.02]"
+        >
+          💾 Save Strategy
+        </button>
+        <button
+          onClick={handleLoadStrategy}
+          className="flex-1 px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-orange-500/30 hover:shadow-orange-500/50 hover:scale-[1.02]"
+        >
+          📂 Load Strategy
         </button>
       </div>
 

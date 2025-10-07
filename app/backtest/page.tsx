@@ -5,14 +5,17 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { api } from '@/lib/api';
 import BacktestDetailsModal from '../components/BacktestDetailsModal';
+import { SaveStrategyModal } from '../components/SaveStrategyModal';
+import { LoadStrategyModal } from '../components/LoadStrategyModal';
 import { Terminal } from '../components/backtest/Terminal';
 import { StrategyEditor } from '../components/backtest/StrategyEditor';
 import { BacktestHeader } from '../components/backtest/BacktestHeader';
 import { InfoPanel } from '../components/backtest/InfoPanel';
-import JSZip from 'jszip';
-import type { CompletedBacktest, DownloadOptions } from '@/types/backtest';
+import type { CompletedBacktest, DownloadOptions, SavedStrategy } from '@/types/backtest';
 import { useTypewriterAnimation } from '@/hooks/useTypewriterAnimation';
 import { useFileUpload } from '@/hooks/backtest/useFileUpload';
+import { saveStrategy, getSavedStrategies, getSavedStrategy, deleteSavedStrategy, clearOldStrategies, cleanupOldBarsData } from '@/lib/strategies';
+import { saveZipFile, getZipFile, deleteZipFile, cleanupOldZipFiles } from '@/lib/zipStorage';
 
 export default function BacktestPage() {
   const [isRunning, setIsRunning] = useState(false);
@@ -26,10 +29,11 @@ export default function BacktestPage() {
   const [completedBacktest, setCompletedBacktest] = useState<CompletedBacktest | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
-  const [downloadOptions, setDownloadOptions] = useState<DownloadOptions>({
-    results: true,
-    code: true,
-  });
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadCache, setDownloadCache] = useState<Map<string, Blob>>(new Map());
+  const [savedStrategies, setSavedStrategies] = useState<SavedStrategy[]>([]);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showLoadModal, setShowLoadModal] = useState(false);
   const { displayedText, showCursor } = useTypewriterAnimation('🧪 New Backtest Session 🧑‍🔬');
   const [strategyCode, setStrategyCode] = useState('');
 
@@ -126,7 +130,9 @@ export default function BacktestPage() {
       const json = JSON.stringify(defaultStrategy, null, 2);
       setStrategyCode(json);
       const name = typeof (defaultStrategy as any).name === 'string' ? (defaultStrategy as any).name : 'DefaultStrategy';
-      if (!strategyName) setStrategyName(name);
+      if (!strategyName) {
+        setStrategyName(name);
+      }
       addTerminalLine('> ✅ Default strategy loaded into editor');
     } catch (e) {
       console.error(e);
@@ -134,49 +140,154 @@ export default function BacktestPage() {
     }
   };
 
+  const handleGetBuyDefault = async () => {
+    try {
+      addTerminalLine('> Fetching BUY default strategy...');
+      const s = await api.backtest.getBuyStrategy();
+      setStrategyCode(JSON.stringify(s, null, 2));
+      addTerminalLine('> ✅ BUY strategy loaded');
+    } catch (e) {
+      console.error(e);
+      addTerminalLine('> ERROR: Failed to fetch BUY strategy');
+    }
+  };
+
+  const handleGetSellDefault = async () => {
+    try {
+      addTerminalLine('> Fetching SELL default strategy...');
+      const s = await api.backtest.getSellStrategy();
+      setStrategyCode(JSON.stringify(s, null, 2));
+      addTerminalLine('> ✅ SELL strategy loaded');
+    } catch (e) {
+      console.error(e);
+      addTerminalLine('> ERROR: Failed to fetch SELL strategy');
+    }
+  };
+
+  const handleGetDualTemplate = async () => {
+    try {
+      addTerminalLine('> Fetching DUAL template...');
+      const s = await api.backtest.getDualTemplate();
+      setStrategyCode(JSON.stringify(s, null, 2));
+      addTerminalLine('> ✅ DUAL template loaded');
+    } catch (e) {
+      console.error(e);
+      addTerminalLine('> ERROR: Failed to fetch DUAL template');
+    }
+  };
+
   const handleDownload = async () => {
-    if (!completedBacktest) return;
+    if (!completedBacktest) {
+      return;
+    }
 
-    const zip = new JSZip();
-
-    // Fetch trades if downloading results
-    if (downloadOptions.results) {
-      const { data: trades } = await supabase
-        .from('trades')
-        .select('*')
-        .eq('backtest_id', completedBacktest.id)
-        .order('trade_number', { ascending: true });
-
-      if (trades && trades.length > 0) {
-        const csvHeader = 'Date,Time,Entry Price,Exit Price,Change %,Signal,Side,PnL,Duration (min)\n';
-        const csvRows = trades.map(trade => {
-          const entryDate = new Date(trade.entry_time);
-          const priceChange = (((trade.exit_price - trade.entry_price) / trade.entry_price) * 100).toFixed(2);
-          return `${entryDate.toLocaleDateString()},${entryDate.toLocaleTimeString()},${trade.entry_price},${trade.exit_price},${priceChange},SMIIO ${trade.side.toUpperCase()},${trade.side},${trade.pnl},${trade.duration_minutes}`;
-        }).join('\n');
-        zip.file('results.csv', csvHeader + csvRows);
+    setIsDownloading(true);
+    try {
+      // Check cache first
+      const cachedBlob = downloadCache.get(completedBacktest.id);
+      
+      let blob: Blob;
+      if (cachedBlob) {
+        addTerminalLine('> 📦 Using cached results...');
+        blob = cachedBlob;
+      } else {
+        addTerminalLine('> 📥 Downloading results from server...');
+        
+        // Use server endpoint to download ZIP file
+        blob = await api.backtest.downloadResults(completedBacktest.id);
+        
+        // Cache the blob
+        setDownloadCache(prev => new Map(prev).set(completedBacktest.id, blob));
       }
+      
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Generate filename based on strategy type and name
+      const stratName = typeof completedBacktest.strategy_code?.name === 'string'
+        ? completedBacktest.strategy_code.name
+        : 'backtest';
+      const strategyType = completedBacktest.strategy_type === 'dual' ? 'dual' : 'single';
+      const date = new Date().toISOString().split('T')[0];
+      a.download = `backtest_${strategyType}_${stratName.replace(/\s+/g, '_')}_${date}.zip`;
+      
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      addTerminalLine('> ✅ Download completed');
+      setShowDownloadMenu(false);
+    } catch (error) {
+      console.error('Download error:', error);
+      addTerminalLine('> ❌ Download failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsDownloading(false);
     }
+  };
 
-    // Add strategy code if selected
-    if (downloadOptions.code && completedBacktest.strategy_code) {
-      zip.file('strategy.json', JSON.stringify(completedBacktest.strategy_code, null, 2));
+  // Load saved strategies on component mount
+  useEffect(() => {
+    const initializeStorage = async () => {
+      try {
+        // Clean up old bars data (older than 1 week)
+        cleanupOldBarsData();
+        
+        // Clean up old ZIP files (older than 1 week)
+        const deletedZips = await cleanupOldZipFiles();
+        
+        // Clear old strategies to prevent storage issues
+        clearOldStrategies(3); // Keep only 3 newest strategies
+        setSavedStrategies(getSavedStrategies());
+        
+        addTerminalLine(`> 🧹 Cleaned up old data (${deletedZips} ZIP files removed)`);
+      } catch (error) {
+        console.error('Error loading strategies:', error);
+        addTerminalLine('> ⚠️ Warning: Could not load saved strategies');
+      }
+    };
+    
+    initializeStorage();
+  }, []);
+
+  const handleSaveStrategy = () => {
+    if (!completedBacktest) {
+      addTerminalLine('> ERROR: No completed backtest to save');
+      return;
     }
+    setShowSaveModal(true);
+  };
 
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const stratName = typeof completedBacktest.strategy_code?.name === 'string'
-      ? completedBacktest.strategy_code.name
-      : 'backtest';
-    const date = new Date().toISOString().split('T')[0];
-    a.download = `backtest_${stratName.replace(/\s+/g, '_')}_${date}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    setShowDownloadMenu(false);
+  const handleLoadStrategy = () => {
+    setSavedStrategies(getSavedStrategies());
+    setShowLoadModal(true);
+  };
+
+  const handleLoadSavedStrategy = (strategy: SavedStrategy) => {
+    // Load strategy code
+    setStrategyCode(JSON.stringify(strategy.strategyCode, null, 2));
+    
+    // Load configuration
+    setStrategyName(strategy.config.strategyName);
+    setStartDate(strategy.config.startDate);
+    setEndDate(strategy.config.endDate);
+    
+    // Load backtest results
+    setCompletedBacktest(strategy.backtestData);
+    
+    addTerminalLine(`> 📂 Loaded strategy: ${strategy.name}`);
+    setShowLoadModal(false);
+  };
+
+  const handleDeleteStrategy = async (id: string) => {
+    if (deleteSavedStrategy(id)) {
+      // Also delete ZIP file
+      await deleteZipFile(id);
+      setSavedStrategies(getSavedStrategies());
+      addTerminalLine('> 🗑️ Strategy and ZIP file deleted');
+    }
   };
 
   const simulateBacktest = async () => {
@@ -255,7 +366,9 @@ export default function BacktestPage() {
         .select()
         .single();
 
-      if (strategyError) throw strategyError;
+      if (strategyError) {
+        throw strategyError;
+      }
 
       // Generate mock results
       const nTrades = Math.floor(Math.random() * 50) + 20;
@@ -285,7 +398,9 @@ export default function BacktestPage() {
         .select()
         .single();
 
-      if (backtestError) throw backtestError;
+      if (backtestError) {
+        throw backtestError;
+      }
 
       // Create mock trades
       const trades = [];
@@ -329,7 +444,9 @@ export default function BacktestPage() {
         .from('trades')
         .insert(trades);
 
-      if (tradesError) throw tradesError;
+      if (tradesError) {
+        throw tradesError;
+      }
 
       addTerminalLine(`> ✅ Mock backtest created successfully!`);
       addTerminalLine(`> Backtest ID: ${backtest.id}`);
@@ -351,6 +468,9 @@ export default function BacktestPage() {
 
   const runServerBacktest = async () => {
     try {
+      // Clear download cache for new backtest
+      setDownloadCache(new Map());
+      
       if (!strategyCode.trim()) {
         addTerminalLine('> ERROR: Strategy JSON is empty');
         return;
@@ -369,17 +489,28 @@ export default function BacktestPage() {
       setCurrentPhase('Submitting');
       addTerminalLine('> Submitting strategy to /backtest/test ...');
 
-      const enqueue = await api.backtest.submitBacktest(parsed);
+      const isDual = (parsed && (parsed.buy_strategy || parsed.sell_strategy || parsed.dual_strategy));
+      const enqueue = isDual ? await api.backtest.submitDualBacktest(parsed) : await api.backtest.submitBacktest(parsed);
       addTerminalLine(`> ✅ Enqueued with job_id=${enqueue.job_id}`);
 
       setCurrentPhase('Polling');
       let done = false;
       let attempts = 0;
       while (!done && attempts < 300) {
-        const status = await api.backtest.getBacktestStatus(enqueue.job_id);
+        try {
+          // Always use full=true to get complete data for bars display
+          const status = await api.backtest.getBacktestStatus(enqueue.job_id, { full: true });
         if (status.status === 'finished') {
           const s = status as any;
           addTerminalLine('> ✅ Results ready');
+          console.log('Backend response:', s); // Debug log
+          addTerminalLine(`> 📊 Loaded ${s.bars?.length || 0} bars records`);
+          if (s.bars_buy) {
+            addTerminalLine(`> 📈 Loaded ${s.bars_buy.length} BUY bars records`);
+          }
+          if (s.bars_sell) {
+            addTerminalLine(`> 📉 Loaded ${s.bars_sell.length} SELL bars records`);
+          }
           setCompletedBacktest({
             id: enqueue.job_id,
             n_trades: s.analytics.n_trades,
@@ -393,6 +524,9 @@ export default function BacktestPage() {
             strategy_code: parsed,
             analytics: s.analytics,
             bars: s.bars,
+            strategy_type: s.strategy_type || (isDual ? 'dual' : 'single'),
+            bars_buy: s.bars_buy,
+            bars_sell: s.bars_sell,
           });
           setCurrentPhase('Completed');
           setIsRunning(false);
@@ -400,14 +534,21 @@ export default function BacktestPage() {
           break;
         }
 
-        if (status.status === 'too_frequent') {
-          addTerminalLine('> ⚠️ Too frequent, waiting 10s...');
-          await new Promise(r => setTimeout(r, 10000));
-        } else {
-          await new Promise(r => setTimeout(r, 2000));
+          if (status.status === 'too_frequent') {
+            addTerminalLine('> ⚠️ Too frequent, waiting 10s...');
+            await new Promise(r => setTimeout(r, 10000));
+          } else {
+            await new Promise(r => setTimeout(r, 2000));
+          }
+          attempts++;
+          setProgress(Math.min(99, attempts));
+        } catch (pollError) {
+          console.error('Polling error:', pollError);
+          addTerminalLine(`> ⚠️ Polling error: ${pollError instanceof Error ? pollError.message : 'Unknown error'}`);
+          await new Promise(r => setTimeout(r, 5000)); // Wait 5s before retry
+          attempts++;
+          setProgress(Math.min(99, attempts));
         }
-        attempts++;
-        setProgress(Math.min(99, attempts));
       }
 
       if (!done) {
@@ -458,6 +599,9 @@ export default function BacktestPage() {
                 e.target.value = '';
               }}
             onGetDefault={handleGetDefault}
+            onGetBuyDefault={handleGetBuyDefault}
+            onGetSellDefault={handleGetSellDefault}
+            onGetDualTemplate={handleGetDualTemplate}
             />
             <Terminal output={terminalOutput} />
           </div>
@@ -483,6 +627,9 @@ export default function BacktestPage() {
             progress={progress}
             elapsedTime={elapsedTime}
             formatTime={formatTime}
+            isDownloading={isDownloading}
+            handleSaveStrategy={handleSaveStrategy}
+            handleLoadStrategy={handleLoadStrategy}
           />
         </div>
       </div>
@@ -498,7 +645,10 @@ export default function BacktestPage() {
               ? completedBacktest.strategy_code.name
               : strategyName) || 'Strategy'
           }
+          strategy_type={completedBacktest.strategy_type}
           bars={completedBacktest.bars}
+          bars_buy={completedBacktest.bars_buy}
+          bars_sell={completedBacktest.bars_sell}
         />
       )}
 
@@ -561,6 +711,96 @@ export default function BacktestPage() {
           animation: shimmer 2s infinite;
         }
       `}</style>
+
+      {/* Save Strategy Modal */}
+      {showSaveModal && completedBacktest && (
+        <SaveStrategyModal
+          isOpen={showSaveModal}
+          onClose={() => setShowSaveModal(false)}
+          onSave={async (name, description) => {
+            try {
+              addTerminalLine('> 📥 Downloading ZIP from server...');
+              
+              // Download ZIP file from server first
+              let zipBlob: Blob | null = null;
+              let zipFileName: string | null = null;
+              
+              try {
+                zipBlob = await api.backtest.downloadResults(completedBacktest.id);
+                const stratName = typeof completedBacktest.strategy_code?.name === 'string'
+                  ? completedBacktest.strategy_code.name
+                  : 'backtest';
+                const strategyType = completedBacktest.strategy_type === 'dual' ? 'dual' : 'single';
+                const date = new Date().toISOString().split('T')[0];
+                zipFileName = `backtest_${strategyType}_${stratName.replace(/\s+/g, '_')}_${date}.zip`;
+                
+                addTerminalLine('> ✅ ZIP downloaded from server');
+              } catch (zipError) {
+                console.warn('Could not download ZIP file:', zipError);
+                addTerminalLine('> ⚠️ ZIP download failed, saving without archive');
+              }
+              
+              // Save strategy
+              const saved = saveStrategy(
+                name,
+                description,
+                completedBacktest,
+                completedBacktest.strategy_code || {},
+                { startDate, endDate, strategyName },
+                zipFileName || undefined
+              );
+              
+              // Save ZIP file to IndexedDB
+              if (zipBlob && zipFileName) {
+                addTerminalLine('> 💾 Saving ZIP to storage...');
+                const zipSaved = await saveZipFile(saved.id, zipFileName, zipBlob);
+                if (zipSaved) {
+                  addTerminalLine('> ✅ ZIP saved successfully');
+                } else {
+                  addTerminalLine('> ⚠️ ZIP save failed');
+                }
+              }
+              
+              setSavedStrategies(getSavedStrategies());
+              addTerminalLine(`> 💾 Strategy saved: ${saved.name}`);
+              setShowSaveModal(false);
+            } catch (error) {
+              console.error('Save strategy error:', error);
+              addTerminalLine(`> ❌ Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              
+              // Try to clear old strategies and retry
+              if (error instanceof Error && (error.message.includes('storage') || error.message.includes('too large'))) {
+                try {
+                  clearOldStrategies(1); // Keep only 1 newest strategy
+                  const saved = saveStrategy(
+                    name,
+                    description,
+                    completedBacktest,
+                    completedBacktest.strategy_code || {},
+                    { startDate, endDate, strategyName }
+                  );
+                  setSavedStrategies(getSavedStrategies());
+                  addTerminalLine(`> 💾 Strategy saved after cleanup: ${saved.name}`);
+                  setShowSaveModal(false);
+                } catch (retryError) {
+                  addTerminalLine(`> ❌ Save failed after cleanup: ${retryError instanceof Error ? retryError.message : 'Unknown error'}`);
+                }
+              }
+            }
+          }}
+        />
+      )}
+
+      {/* Load Strategy Modal */}
+      {showLoadModal && (
+        <LoadStrategyModal
+          isOpen={showLoadModal}
+          onClose={() => setShowLoadModal(false)}
+          strategies={savedStrategies}
+          onLoad={handleLoadSavedStrategy}
+          onDelete={handleDeleteStrategy}
+        />
+      )}
     </main>
   );
 }

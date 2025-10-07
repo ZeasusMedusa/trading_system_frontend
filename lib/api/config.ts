@@ -12,7 +12,7 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1
 export const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK === 'true';
 
 // Request timeout in milliseconds
-export const API_TIMEOUT = 30000; // 30 seconds
+export const API_TIMEOUT = 120000; // 2 minutes for large data requests
 
 // Polling interval for backtest status (in ms)
 export const BACKTEST_POLLING_INTERVAL = 2000; // 2 seconds
@@ -36,6 +36,13 @@ export const ENDPOINTS = {
     TEST: '/backtest/test',
     RESULT: (jobId: string) => `/backtest/${jobId}`,
     DEFAULT_STRATEGY: '/backtest/default-strategy',
+    // New strategy endpoints
+    STRATEGY_BUY: '/backtest/strategy/buy',
+    STRATEGY_SELL: '/backtest/strategy/sell',
+    STRATEGY_BOTH: '/backtest/strategy/both',
+    STRATEGY_DUAL: '/backtest/strategy/dual',
+    TEST_DUAL: '/backtest/test/dual',
+    DOWNLOAD: (jobId: string) => `/backtest/${jobId}/download`,
   },
 
   // Admin

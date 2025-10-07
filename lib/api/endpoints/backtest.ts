@@ -35,14 +35,30 @@ export async function submitBacktest(strategy: Strategy): Promise<BacktestEnqueu
 /**
  * Get backtest status/results by job ID
  */
-export async function getBacktestStatus(jobId: string): Promise<BacktestStatusResponse> {
+export async function getBacktestStatus(
+  jobId: string, 
+  options?: { start?: number; end?: number; full?: boolean }
+): Promise<BacktestStatusResponse> {
   if (USE_MOCK_API) {
     return mockBacktestStatus(jobId);
   }
 
+  const params = new URLSearchParams();
+  if (options?.start !== undefined) {
+    params.append('start', options.start.toString());
+  }
+  if (options?.end !== undefined) {
+    params.append('end', options.end.toString());
+  }
+  if (options?.full !== undefined) {
+    params.append('full', options.full.toString());
+  }
+
+  const url = ENDPOINTS.BACKTEST.RESULT(jobId) + (params.toString() ? `?${params.toString()}` : '');
+  
   return apiRequest<BacktestStatusResponse>({
     method: 'GET',
-    url: ENDPOINTS.BACKTEST.RESULT(jobId),
+    url,
   });
 }
 
@@ -103,18 +119,24 @@ export async function runBacktest(
   onProgress?: (status: string, data?: unknown) => void
 ): Promise<BacktestFinishedResponse> {
   // Submit backtest
-  if (onProgress) onProgress('enqueuing');
+  if (onProgress) {
+    onProgress('enqueuing');
+  }
   const { job_id } = await submitBacktest(strategy);
 
   // Poll for results
-  if (onProgress) onProgress('polling', { job_id });
+  if (onProgress) {
+    onProgress('polling', { job_id });
+  }
   const results = await pollBacktestResults(job_id, (status) => {
     if (onProgress) {
       onProgress(status.status, status);
     }
   });
 
-  if (onProgress) onProgress('finished', results);
+  if (onProgress) {
+    onProgress('finished', results);
+  }
   return results;
 }
 
@@ -126,4 +148,30 @@ export async function getDefaultStrategy(): Promise<Strategy> {
     method: 'GET',
     url: ENDPOINTS.BACKTEST.DEFAULT_STRATEGY,
   });
+}
+
+// New Strategy endpoints
+export async function getBuyStrategy(): Promise<Strategy> {
+  return apiRequest<Strategy>({ method: 'GET', url: ENDPOINTS.BACKTEST.STRATEGY_BUY });
+}
+
+export async function getSellStrategy(): Promise<Strategy> {
+  return apiRequest<Strategy>({ method: 'GET', url: ENDPOINTS.BACKTEST.STRATEGY_SELL });
+}
+
+export async function getBothStrategies(): Promise<{ buy_strategy: Strategy; sell_strategy: Strategy } | unknown> {
+  return apiRequest({ method: 'GET', url: ENDPOINTS.BACKTEST.STRATEGY_BOTH });
+}
+
+export async function getDualTemplate(): Promise<unknown> {
+  return apiRequest({ method: 'GET', url: ENDPOINTS.BACKTEST.STRATEGY_DUAL });
+}
+
+export async function submitDualBacktest(body: { buy_strategy: Strategy; sell_strategy: Strategy } | { dual_strategy: { buy_strategy: Strategy; sell_strategy: Strategy } } | unknown): Promise<BacktestEnqueueResponse> {
+  return apiRequest<BacktestEnqueueResponse>({ method: 'POST', url: ENDPOINTS.BACKTEST.TEST_DUAL, data: body });
+}
+
+export async function downloadResults(jobId: string): Promise<Blob> {
+  // Use the raw axios instance to get blob
+  return apiRequest<Blob>({ method: 'GET', url: ENDPOINTS.BACKTEST.DOWNLOAD(jobId), responseType: 'blob' as any });
 }

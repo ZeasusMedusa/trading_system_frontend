@@ -1,5 +1,7 @@
 'use client';
 
+import { useRef, useState } from 'react';
+
 interface StrategyEditorProps {
   strategyCode: string;
   isDragging: boolean;
@@ -11,6 +13,9 @@ interface StrategyEditorProps {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onGetDefault?: () => void;
+  onGetBuyDefault?: () => void;
+  onGetSellDefault?: () => void;
+  onGetDualTemplate?: () => void;
 }
 
 export function StrategyEditor({
@@ -24,7 +29,13 @@ export function StrategyEditor({
   fileInputRef,
   onFileChange,
   onGetDefault,
+  onGetBuyDefault,
+  onGetSellDefault,
+  onGetDualTemplate,
 }: StrategyEditorProps) {
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+
   return (
     <div
       className={`flex-1 flex flex-col bg-gradient-to-br from-gray-900/80 to-black/80 backdrop-blur-sm border rounded-2xl overflow-hidden shadow-2xl transition-all ${
@@ -53,12 +64,38 @@ export function StrategyEditor({
           >
             <span>📁 Drag & Drop .json file here</span>
           </button>
-          <button
-            onClick={onGetDefault}
-            className="text-xs text-gray-400 hover:text-emerald-400 flex items-center gap-2 transition-colors cursor-pointer hover:bg-gray-700/30 px-3 py-1.5 rounded-lg"
-          >
-            <span>⬇️ Get Default Strategy</span>
-          </button>
+            {onGetDefault && (
+              <button
+                onClick={onGetDefault}
+                className="text-xs text-gray-400 hover:text-emerald-400 flex items-center gap-2 transition-colors cursor-pointer hover:bg-gray-700/30 px-3 py-1.5 rounded-lg"
+              >
+                <span>⬇️ Get Default Strategy</span>
+              </button>
+            )}
+          {onGetBuyDefault && (
+            <button
+              onClick={onGetBuyDefault}
+              className="text-xs text-gray-400 hover:text-emerald-400 flex items-center gap-2 transition-colors cursor-pointer hover:bg-gray-700/30 px-3 py-1.5 rounded-lg"
+            >
+              <span>⬇️ Get BUY Strategy</span>
+            </button>
+          )}
+          {onGetSellDefault && (
+            <button
+              onClick={onGetSellDefault}
+              className="text-xs text-gray-400 hover:text-emerald-400 flex items-center gap-2 transition-colors cursor-pointer hover:bg-gray-700/30 px-3 py-1.5 rounded-lg"
+            >
+              <span>⬇️ Get SELL Strategy</span>
+            </button>
+          )}
+          {onGetDualTemplate && (
+            <button
+              onClick={onGetDualTemplate}
+              className="text-xs text-gray-400 hover:text-emerald-400 flex items-center gap-2 transition-colors cursor-pointer hover:bg-gray-700/30 px-3 py-1.5 rounded-lg"
+            >
+              <span>⬇️ Get DUAL Template</span>
+            </button>
+          )}
         </div>
         <input
           ref={fileInputRef}
@@ -71,7 +108,7 @@ export function StrategyEditor({
 
       <div className="flex-1 overflow-hidden relative flex">
         {/* Line numbers */}
-        <LineNumbers strategyCode={strategyCode} />
+        <LineNumbers strategyCode={strategyCode} scrollTop={scrollTop} />
 
         <div className="flex-1 relative overflow-hidden">
           {/* Empty state placeholder */}
@@ -88,8 +125,10 @@ export function StrategyEditor({
           <textarea
             value={strategyCode}
             onChange={(e) => onCodeChange(e.target.value)}
+            onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+            ref={textAreaRef}
             className={`w-full h-full p-6 bg-transparent text-gray-300 font-mono text-sm resize-none focus:outline-none custom-scrollbar ${
-              !strategyCode ? 'opacity-0' : 'opacity-100'
+              strategyCode ? 'opacity-100' : 'opacity-0'
             }`}
             placeholder=""
             spellCheck={false}
@@ -103,9 +142,12 @@ export function StrategyEditor({
   );
 }
 
-function LineNumbers({ strategyCode }: { strategyCode: string }) {
+function LineNumbers({ strategyCode, scrollTop = 0 }: { strategyCode: string; scrollTop?: number }) {
   return (
-    <div className="w-12 bg-black/30 border-r border-gray-800/50 py-6 px-2 flex-shrink-0 overflow-hidden">
+    <div
+      className="w-12 bg-black/30 border-r border-gray-800/50 py-6 px-2 flex-shrink-0 overflow-hidden"
+      style={{ transform: `translateY(${-scrollTop}px)` }}
+    >
       {strategyCode ? (
         strategyCode.split('\n').map((_, index) => (
           <div

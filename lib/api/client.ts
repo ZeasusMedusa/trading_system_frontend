@@ -47,13 +47,11 @@ apiClient.interceptors.response.use(
   },
   (error: AxiosError) => {
     // Handle 401 Unauthorized - logout user
-    if (error.response?.status === 401) {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token');
-        // Redirect to login if not already there
-        if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login';
-        }
+    if (error.response?.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token');
+      // Redirect to login if not already there
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
       }
     }
 
@@ -63,12 +61,17 @@ apiClient.interceptors.response.use(
     }
 
     // Log error for debugging
-    console.error('API Error:', {
-      url: error.config?.url,
-      method: error.config?.method,
-      status: error.response?.status,
-      data: error.response?.data,
-    });
+    try {
+      console.error('API Error:', {
+        url: error.config?.url,
+        method: error.config?.method,
+        status: error.response?.status,
+        data: error.response?.data ? JSON.stringify(error.response.data) : undefined,
+        message: error.message,
+      });
+    } catch (logError) {
+      console.error('API Error (serialization failed):', error.message);
+    }
 
     return Promise.reject(error);
   }
@@ -108,10 +111,10 @@ export async function apiRequest<T>(
     const response = await apiClient.request<T>(config);
     return response.data;
   } catch (error) {
-    // Retry on network errors (not on 4xx/5xx)
-    if (retries > 0 && axios.isAxiosError(error) && !error.response) {
+    // Retry on network errors and timeouts (not on 4xx/5xx)
+    if (retries > 0 && axios.isAxiosError(error) && (!error.response || error.code === 'ECONNABORTED')) {
       console.log(`Retrying request... (${retries} attempts left)`);
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
       return apiRequest(config, retries - 1);
     }
     throw error;

@@ -13,6 +13,9 @@ export interface CompletedBacktest {
   strategy_code?: Record<string, unknown>;
   analytics?: Record<string, unknown>;
   bars?: Array<Record<string, unknown>>;
+  strategy_type?: 'single' | 'dual';
+  bars_buy?: Array<Record<string, unknown>>;
+  bars_sell?: Array<Record<string, unknown>>;
 }
 
 export interface DownloadOptions {
@@ -31,4 +34,21 @@ export interface Trade {
   side: 'long' | 'short';
   pnl: number;
   duration_minutes: number;
+}
+
+export interface SavedStrategy {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+  backtestData: CompletedBacktest;
+  strategyCode: Record<string, unknown>;
+  config: {
+    startDate: string;
+    endDate: string;
+    strategyName: string;
+  };
+  hasZipFile?: boolean; // Indicates if ZIP file is available
+  zipFileName?: string; // Name of the ZIP file
 }

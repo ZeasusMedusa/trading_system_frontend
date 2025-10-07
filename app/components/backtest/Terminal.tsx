@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface TerminalProps {
   output: string[];
@@ -8,12 +8,21 @@ interface TerminalProps {
 
 export function Terminal({ output }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
+  const [timeString, setTimeString] = useState<string>('');
 
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [output]);
+
+  // Avoid hydration mismatch: render time only after mount and update every second
+  useEffect(() => {
+    const update = () => setTimeString(new Date().toLocaleTimeString());
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className="h-64 flex flex-col bg-gradient-to-br from-gray-900/80 to-black/80 backdrop-blur-sm border border-cyan-500/30 rounded-2xl overflow-hidden shadow-2xl shadow-cyan-500/20">
@@ -27,7 +36,7 @@ export function Terminal({ output }: TerminalProps) {
           <span className="text-cyan-400 font-mono text-sm font-semibold">terminal</span>
         </div>
         <div className="text-xs text-gray-500 font-mono">
-          {new Date().toLocaleTimeString()}
+          {timeString}
         </div>
       </div>
 
