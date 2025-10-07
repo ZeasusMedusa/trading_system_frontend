@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { supabase } from '@/lib/supabase';
 import { api } from '@/lib/api';
 
 interface Trade {
@@ -125,25 +124,10 @@ export default function BacktestDetailsModal({
   }, [activeTab, bars, bars_buy, bars_sell, sortKey, sortDir]);
 
   const loadTrades = async () => {
-    // Skip loading trades for saved strategies (they don't exist in Supabase)
-    if (isSaved) {
-      setLoading(false);
-      return;
-    }
-    
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('trades')
-      .select('*')
-      .eq('backtest_id', backtestId)
-      .order('entry_time', { ascending: true });
-
-    if (error) {
-      console.error('Error loading trades:', error);
-    } else {
-      setTrades(data || []);
-    }
+    // Trades are not loaded from database anymore
+    // All data comes from backtest results (analytics)
     setLoading(false);
+    setTrades([]);
   };
 
   const loadStrategyCode = async () => {
@@ -153,20 +137,8 @@ export default function BacktestDetailsModal({
       return;
     }
     
-    // Otherwise try to load from Supabase (for old backtests)
-    if (!isSaved) {
-      const { data, error } = await supabase
-        .from('backtests')
-        .select('strategy_code')
-        .eq('id', backtestId)
-        .single();
-
-      if (error) {
-        console.error('Error loading strategy code:', error);
-      } else {
-        setStrategyCode(data?.strategy_code || null);
-      }
-    }
+    // Strategy code should be provided via props
+    setStrategyCode(null);
   };
 
   useEffect(() => {

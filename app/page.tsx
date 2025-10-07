@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import BacktestDetailsModal from './components/BacktestDetailsModal';
 import { useAuth } from './providers/AuthProvider';
@@ -110,21 +109,9 @@ export default function DashboardPage() {
 
   const loadBacktests = async () => {
     try {
-      const { data, error } = await supabase
-        .from('backtests')
-        .select(`
-          *,
-          strategies (
-            name
-          )
-        `)
-        .eq('status', 'finished')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        throw error;
-      }
-      setBacktests(data || []);
+      // TODO: Add API endpoint for listing backtests on backend
+      // For now, only show saved strategies from /strategy API
+      setBacktests([]);
     } catch (err) {
       console.error('Error loading backtests:', err);
     } finally {
@@ -157,17 +144,10 @@ export default function DashboardPage() {
         await loadSavedStrategies();
         console.log('Saved strategy deleted:', backtestId);
       } else {
-        // Delete from Supabase
-        const { error } = await supabase
-          .from('backtests')
-          .delete()
-          .eq('id', backtestId);
-
-        if (error) {
-          throw error;
-        }
-
-        // Update local state
+        // Delete from backend API
+        // TODO: Add DELETE /backtest/{id} endpoint on backend
+        console.log('Delete backtest from server:', backtestId);
+        // For now, just update local state
         setBacktests(prev => prev.filter(bt => bt.id !== backtestId));
       }
     } catch (err) {
