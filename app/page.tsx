@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import BacktestDetailsModal from './components/BacktestDetailsModal';
 import { useAuth } from './providers/AuthProvider';
-import { getSavedStrategies, getSavedStrategy, deleteSavedStrategy, cleanupOldBarsData } from '@/lib/strategies';
-import type { SavedStrategy } from '@/types/backtest';
+import { api } from '@/lib/api';
+import type { StrategyListItem } from '@/lib/api/endpoints/strategy';
 
 interface Backtest {
   id: string;
@@ -26,6 +26,17 @@ interface Backtest {
   strategies: {
     name: string;
   };
+  // Additional fields for saved strategies
+  isSaved?: boolean;
+  source?: 'local' | 'server';
+  description?: string;
+  metrics?: Record<string, unknown>;
+  config?: Record<string, unknown>;
+  analytics?: Record<string, unknown>;
+  strategy_type?: 'single' | 'dual';
+  bars?: Array<Record<string, unknown>>;
+  bars_buy?: Array<Record<string, unknown>>;
+  bars_sell?: Array<Record<string, unknown>>;
 }
 
 interface Folder {
@@ -51,7 +62,7 @@ export default function DashboardPage() {
   const [showModal, setShowModal] = useState(false);
   const [displayedText, setDisplayedText] = useState('');
   const [dots, setDots] = useState('');
-  const [savedStrategies, setSavedStrategies] = useState<SavedStrategy[]>([]);
+  const [savedStrategies, setSavedStrategies] = useState<StrategyListItem[]>([]);
 
   useEffect(() => {
     loadBacktests();
@@ -150,12 +161,9 @@ export default function DashboardPage() {
     }
   };
 
-  const loadSavedStrategies = () => {
+  const loadSavedStrategies = async () => {
     try {
-      // Clean up old bars data (older than 1 week)
-      cleanupOldBarsData();
-      
-      const strategies = getSavedStrategies();
+      const strategies = await api.strategy.listStrategies();
       setSavedStrategies(strategies);
     } catch (error) {
       console.error('Error loading saved strategies:', error);
@@ -267,15 +275,11 @@ export default function DashboardPage() {
     try {
       // Check if this is a saved strategy
       if (isSaved && source === 'local') {
-        // Delete from localStorage
-        const success = await deleteSavedStrategy(backtestId);
-        if (success) {
-          // Reload saved strategies
-          setSavedStrategies(getSavedStrategies());
-          console.log('Saved strategy deleted:', backtestId);
-        } else {
-          console.error('Failed to delete saved strategy:', backtestId);
-        }
+        // Delete from server API
+        await api.strategy.deleteStrategy(Number(backtestId));
+        // Reload saved strategies
+        await loadSavedStrategies();
+        console.log('Saved strategy deleted:', backtestId);
       } else {
         // Delete from Supabase
         const { error } = await supabase
@@ -304,24 +308,28 @@ export default function DashboardPage() {
     }));
     
     const savedBacktests = savedStrategies.map(strategy => ({
-      id: strategy.id,
-      created_at: strategy.createdAt,
-      strategy_id: strategy.id,
-      job_id: strategy.backtestData.id,
+      id: String(strategy.id),
+      created_at: strategy.created_at,
+      strategy_id: String(strategy.id),
+      job_id: String(strategy.id),
       status: 'finished',
-      n_trades: strategy.backtestData.n_trades,
-      n_wins: strategy.backtestData.n_wins,
-      n_losses: strategy.backtestData.n_losses,
-      winrate: strategy.backtestData.winrate,
-      total_pnl: strategy.backtestData.total_pnl,
-      sharpe_ratio: strategy.backtestData.sharpe_ratio,
-      max_drawdown: strategy.backtestData.max_drawdown,
-      profit_factor: strategy.backtestData.profit_factor,
+      n_trades: (strategy.metrics as any)?.n_trades || 0,
+      n_wins: (strategy.metrics as any)?.n_wins || 0,
+      n_losses: (strategy.metrics as any)?.n_losses || 0,
+      winrate: (strategy.metrics as any)?.winrate || 0,
+      total_pnl: (strategy.metrics as any)?.total_pnl || 0,
+      sharpe_ratio: (strategy.metrics as any)?.sharpe_ratio || 0,
+      max_drawdown: (strategy.metrics as any)?.max_drawdown || 0,
+      profit_factor: (strategy.metrics as any)?.profit_factor || 0,
       folder_ids: [],
       strategies: { name: strategy.name },
       isSaved: true,
       source: 'local' as const,
-      description: strategy.description
+      description: strategy.description,
+      metrics: strategy.metrics,
+      config: strategy.config,
+      analytics: strategy.metrics, // Pass metrics as analytics for modal
+      strategy_type: 'single' as const, // Saved strategies are single by default
     }));
     
     let filtered = [...serverBacktests, ...savedBacktests];
@@ -863,38 +871,7 @@ export default function DashboardPage() {
                     </div>
                     <button
                       onClick={() => {
-                        // Load full data for saved strategies
-                        if (backtest.isSaved && backtest.source === 'local') {
-                          console.log('Loading saved strategy:', backtest.id);
-                          const fullStrategy = getSavedStrategy(backtest.id);
-                          console.log('Full strategy loaded:', fullStrategy);
-                          
-                          if (fullStrategy) {
-                            // Update backtest with full data
-                            const fullBacktest = {
-                              ...backtest,
-                              analytics: fullStrategy.backtestData.analytics,
-                              bars: fullStrategy.backtestData.bars,
-                              bars_buy: fullStrategy.backtestData.bars_buy,
-                              bars_sell: fullStrategy.backtestData.bars_sell,
-                              strategy_type: fullStrategy.backtestData.strategy_type,
-                              strategy_code: fullStrategy.strategyCode,
-                            };
-                            
-                            console.log('Full backtest data:', {
-                              bars: fullBacktest.bars?.length || 0,
-                              bars_buy: fullBacktest.bars_buy?.length || 0,
-                              bars_sell: fullBacktest.bars_sell?.length || 0,
-                            });
-                            
-                            setSelectedBacktest(fullBacktest);
-                          } else {
-                            console.log('Full strategy not found, using cached data');
-                            setSelectedBacktest(backtest);
-                          }
-                        } else {
-                          setSelectedBacktest(backtest);
-                        }
+                        setSelectedBacktest(backtest);
                         setShowModal(true);
                       }}
                       className="text-cyan-400 hover:text-cyan-300 text-sm font-semibold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -927,6 +904,7 @@ export default function DashboardPage() {
           bars_sell={selectedBacktest.bars_sell}
           isSaved={selectedBacktest.isSaved}
           analytics={selectedBacktest.analytics}
+          config={selectedBacktest.config}
         />
       )}
     </main>

@@ -27,6 +27,7 @@ interface BacktestDetailsModalProps {
   bars_sell?: Array<Record<string, unknown>>;
   isSaved?: boolean;
   analytics?: Record<string, unknown>;
+  config?: Record<string, unknown>; // Strategy config for saved strategies
 }
 
 export default function BacktestDetailsModal({
@@ -39,12 +40,13 @@ export default function BacktestDetailsModal({
   bars_buy,
   bars_sell,
   isSaved = false,
-  analytics
+  analytics,
+  config
 }: BacktestDetailsModalProps) {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'bars' | 'bars_buy' | 'bars_sell' | 'code'>(
-    strategy_type === 'dual' ? 'bars' : 'bars'
+  const [activeTab, setActiveTab] = useState<'bars' | 'bars_buy' | 'bars_sell' | 'code' | 'metrics'>(
+    isSaved ? 'metrics' : (strategy_type === 'dual' ? 'bars' : 'bars')
   );
   const [strategyCode, setStrategyCode] = useState<Record<string, unknown> | null>(null);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -123,6 +125,12 @@ export default function BacktestDetailsModal({
   }, [activeTab, bars, bars_buy, bars_sell, sortKey, sortDir]);
 
   const loadTrades = async () => {
+    // Skip loading trades for saved strategies (they don't exist in Supabase)
+    if (isSaved) {
+      setLoading(false);
+      return;
+    }
+    
     setLoading(true);
     const { data, error } = await supabase
       .from('trades')
@@ -139,6 +147,12 @@ export default function BacktestDetailsModal({
   };
 
   const loadStrategyCode = async () => {
+    // For saved strategies, use config prop
+    if (isSaved) {
+      setStrategyCode(config || null);
+      return;
+    }
+    
     const { data, error } = await supabase
       .from('backtests')
       .select('strategy_code')
@@ -157,10 +171,10 @@ export default function BacktestDetailsModal({
       loadTrades();
       loadStrategyCode();
       // Debug log
-      console.log('Modal props:', { strategy_type, bars, bars_buy, bars_sell });
+      console.log('Modal props:', { strategy_type, bars, bars_buy, bars_sell, isSaved });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, backtestId, strategy_type, bars, bars_buy, bars_sell]);
+  }, [isOpen, backtestId, strategy_type, bars, bars_buy, bars_sell, isSaved]);
 
   const formatDate = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -278,7 +292,22 @@ export default function BacktestDetailsModal({
 
           {/* Tabs */}
           <div className="flex gap-2">
-            {strategy_type === 'single' && (
+            {/* Show Metrics tab for saved strategies */}
+            {isSaved && (
+              <button
+                onClick={() => setActiveTab('metrics')}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                  activeTab === 'metrics'
+                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
+                    : 'text-gray-400 hover:text-gray-300'
+                }`}
+              >
+                📊 Metrics
+              </button>
+            )}
+            
+            {/* Show Bars tabs for non-saved strategies */}
+            {!isSaved && strategy_type === 'single' && (
               <button
                 onClick={() => setActiveTab('bars')}
                 className={`px-4 py-2 rounded-lg font-semibold transition-all ${
@@ -290,7 +319,7 @@ export default function BacktestDetailsModal({
                 📈 Bars
               </button>
             )}
-            {strategy_type === 'dual' && (
+            {!isSaved && strategy_type === 'dual' && (
               <>
                 <button
                   onClick={() => setActiveTab('bars')}
@@ -339,7 +368,29 @@ export default function BacktestDetailsModal({
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
-          {activeTab === 'bars' || activeTab === 'bars_buy' || activeTab === 'bars_sell' ? (
+          {activeTab === 'metrics' ? (
+            /* Metrics Tab - show analytics */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {analytics && Object.entries(analytics)
+                .filter(([key]) => key !== 'trades' && key !== 'trade_type_analysis') // Exclude trades and trade_type_analysis
+                .map(([key, value]) => (
+                <div key={key} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                  <div className="text-sm text-gray-400 mb-1 capitalize">
+                    {key.replace(/_/g, ' ')}
+                  </div>
+                  <div className="text-xl font-bold text-white">
+                    {typeof value === 'number' ? value.toFixed(4) : String(value)}
+                  </div>
+                </div>
+              ))}
+              {(!analytics || Object.keys(analytics).filter(k => k !== 'trades' && k !== 'trade_type_analysis').length === 0) && (
+                <div className="col-span-full text-center py-12 text-gray-400">
+                  <p className="text-6xl mb-4">📊</p>
+                  <p>Нет метрик для отображения</p>
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'bars' || activeTab === 'bars_buy' || activeTab === 'bars_sell' ? (
             <>
               {(() => {
                 const dataset = activeTab === 'bars_buy' ? bars_buy : activeTab === 'bars_sell' ? bars_sell : bars;
@@ -442,9 +493,38 @@ export default function BacktestDetailsModal({
             /* Strategy Code Tab */
             <div>
               {strategyCode ? (
-                <pre className="bg-gray-900 p-4 rounded-lg overflow-auto text-sm text-gray-300 font-mono border border-gray-700/50 max-h-[calc(100vh-300px)]">
-                  {JSON.stringify(strategyCode, null, 2)}
-                </pre>
+                <>
+                  <div className="flex gap-3 mb-4">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(strategyCode, null, 2));
+                        alert('Код скопирован в буфер обмена!');
+                      }}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+                    >
+                      📋 Скопировать
+                    </button>
+                    <button
+                      onClick={() => {
+                        const blob = new Blob([JSON.stringify(strategyCode, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `strategy_${strategyName.replace(/\s+/g, '_')}.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      }}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+                    >
+                      💾 Скачать JSON
+                    </button>
+                  </div>
+                  <pre className="bg-gray-900 p-4 rounded-lg overflow-auto text-sm text-gray-300 font-mono border border-gray-700/50 max-h-[calc(100vh-300px)]">
+                    {JSON.stringify(strategyCode, null, 2)}
+                  </pre>
+                </>
               ) : (
                 <div className="text-center py-12 text-gray-400">
                   <p className="text-6xl mb-4">📝</p>

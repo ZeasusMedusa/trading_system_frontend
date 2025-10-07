@@ -5,18 +5,19 @@ import { useState } from 'react';
 interface SaveStrategyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (name: string, description: string) => void;
+  onSave: (name: string, description: string) => Promise<void>;
+  isSaving?: boolean;
 }
 
-export function SaveStrategyModal({ isOpen, onClose, onSave }: SaveStrategyModalProps) {
+export function SaveStrategyModal({ isOpen, onClose, onSave, isSaving = false }: SaveStrategyModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) {
       return;
     }
-    onSave(name.trim(), description.trim());
+    await onSave(name.trim(), description.trim());
     setName('');
     setDescription('');
   };
@@ -62,18 +63,26 @@ export function SaveStrategyModal({ isOpen, onClose, onSave }: SaveStrategyModal
         <div className="flex gap-3 mt-6">
           <button
             onClick={handleSave}
-            disabled={!name.trim()}
+            disabled={!name.trim() || isSaving}
             className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              name.trim()
+              name.trim() && !isSaving
                 ? 'bg-blue-600 hover:bg-blue-700 text-white'
                 : 'bg-gray-600 text-gray-400 cursor-not-allowed'
             }`}
           >
-            Save Strategy
+            {isSaving ? (
+              <span className="flex items-center justify-center gap-2">
+                <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                Saving...
+              </span>
+            ) : (
+              'Save Strategy'
+            )}
           </button>
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors"
+            disabled={isSaving}
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Cancel
           </button>

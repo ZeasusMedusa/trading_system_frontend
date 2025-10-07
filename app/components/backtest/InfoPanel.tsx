@@ -16,7 +16,6 @@ interface InfoPanelProps {
   infoPanelRef: React.RefObject<HTMLDivElement | null>;
   showScrollButton: boolean;
   scrollToBottom: () => void;
-  simulateBacktest: () => void;
   runServerBacktest: () => void;
   handleDownload: () => void;
   setShowDetailsModal: (show: boolean) => void;
@@ -42,7 +41,6 @@ export function InfoPanel({
   infoPanelRef,
   showScrollButton,
   scrollToBottom,
-  simulateBacktest,
   runServerBacktest,
   handleDownload,
   setShowDetailsModal,
@@ -73,7 +71,6 @@ export function InfoPanel({
             setStartDate={setStartDate}
             endDate={endDate}
             setEndDate={setEndDate}
-            simulateBacktest={simulateBacktest}
             runServerBacktest={runServerBacktest}
             isRunning={isRunning}
           />
@@ -118,7 +115,6 @@ function ConfigurationView({
   setStartDate,
   endDate,
   setEndDate,
-  simulateBacktest,
   runServerBacktest,
   isRunning,
 }: {
@@ -128,7 +124,6 @@ function ConfigurationView({
   setStartDate: (date: string) => void;
   endDate: string;
   setEndDate: (date: string) => void;
-  simulateBacktest: () => void;
   runServerBacktest: () => void;
   isRunning: boolean;
 }) {
@@ -216,22 +211,13 @@ function ConfigurationView({
           </div>
 
 
-          <div className="flex gap-3">
-            <button
-              onClick={simulateBacktest}
-              disabled={isRunning}
-              className="w-full px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              🚀 Run Backtest (Demo)
-            </button>
-            <button
-              onClick={runServerBacktest}
-              disabled={isRunning}
-              className="w-full px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              🌐 Run Backtest (Server)
-            </button>
-          </div>
+          <button
+            onClick={runServerBacktest}
+            disabled={isRunning}
+            className="w-full px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            🌐 Run Backtest (Server)
+          </button>
         </div>
       </div>
     </>

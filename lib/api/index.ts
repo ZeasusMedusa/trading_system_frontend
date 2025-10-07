@@ -17,18 +17,21 @@ export * as backtest from './endpoints/backtest';
 export * as auth from './endpoints/auth';
 export * as admin from './endpoints/admin';
 export * as settings from './endpoints/settings';
+export * as strategy from './endpoints/strategy';
 
 // Convenience default export with all endpoints
 import * as backtest from './endpoints/backtest';
 import * as auth from './endpoints/auth';
 import * as admin from './endpoints/admin';
 import * as settings from './endpoints/settings';
+import * as strategy from './endpoints/strategy';
 
 export const api = {
   backtest,
   auth,
   admin,
   settings,
+  strategy,
 };
 
 export default api;

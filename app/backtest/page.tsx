@@ -11,11 +11,11 @@ import { Terminal } from '../components/backtest/Terminal';
 import { StrategyEditor } from '../components/backtest/StrategyEditor';
 import { BacktestHeader } from '../components/backtest/BacktestHeader';
 import { InfoPanel } from '../components/backtest/InfoPanel';
-import type { CompletedBacktest, DownloadOptions, SavedStrategy } from '@/types/backtest';
+import type { CompletedBacktest, DownloadOptions } from '@/types/backtest';
+import type { StrategyListItem } from '@/lib/api/endpoints/strategy';
 import { useTypewriterAnimation } from '@/hooks/useTypewriterAnimation';
 import { useFileUpload } from '@/hooks/backtest/useFileUpload';
-import { saveStrategy, getSavedStrategies, getSavedStrategy, deleteSavedStrategy, clearOldStrategies, cleanupOldBarsData } from '@/lib/strategies';
-import { saveZipFile, getZipFile, deleteZipFile, cleanupOldZipFiles } from '@/lib/zipStorage';
+// Local persistence removed; use server strategy APIs instead
 
 export default function BacktestPage() {
   const [isRunning, setIsRunning] = useState(false);
@@ -31,9 +31,10 @@ export default function BacktestPage() {
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadCache, setDownloadCache] = useState<Map<string, Blob>>(new Map());
-  const [savedStrategies, setSavedStrategies] = useState<SavedStrategy[]>([]);
+  const [savedStrategies, setSavedStrategies] = useState<StrategyListItem[]>([]);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
+  const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const { displayedText, showCursor } = useTypewriterAnimation('🧪 New Backtest Session 🧑‍🔬');
   const [strategyCode, setStrategyCode] = useState('');
 
@@ -228,28 +229,20 @@ export default function BacktestPage() {
     }
   };
 
-  // Load saved strategies on component mount
+  // Load saved strategies from server on component mount
   useEffect(() => {
-    const initializeStorage = async () => {
+    const loadStrategiesFromServer = async () => {
       try {
-        // Clean up old bars data (older than 1 week)
-        cleanupOldBarsData();
-        
-        // Clean up old ZIP files (older than 1 week)
-        const deletedZips = await cleanupOldZipFiles();
-        
-        // Clear old strategies to prevent storage issues
-        clearOldStrategies(3); // Keep only 3 newest strategies
-        setSavedStrategies(getSavedStrategies());
-        
-        addTerminalLine(`> 🧹 Cleaned up old data (${deletedZips} ZIP files removed)`);
+        const strategies = await api.strategy.listStrategies();
+        setSavedStrategies(strategies);
+        addTerminalLine(`> 📂 Loaded ${strategies.length} saved strategies from server`);
       } catch (error) {
         console.error('Error loading strategies:', error);
         addTerminalLine('> ⚠️ Warning: Could not load saved strategies');
       }
     };
     
-    initializeStorage();
+    loadStrategiesFromServer();
   }, []);
 
   const handleSaveStrategy = () => {
@@ -260,33 +253,42 @@ export default function BacktestPage() {
     setShowSaveModal(true);
   };
 
-  const handleLoadStrategy = () => {
-    setSavedStrategies(getSavedStrategies());
-    setShowLoadModal(true);
+  const handleLoadStrategy = async () => {
+    try {
+      const strategies = await api.strategy.listStrategies();
+      setSavedStrategies(strategies);
+      setShowLoadModal(true);
+    } catch (error) {
+      console.error('Error loading strategies:', error);
+      addTerminalLine('> ❌ Failed to load strategies from server');
+    }
   };
 
-  const handleLoadSavedStrategy = (strategy: SavedStrategy) => {
-    // Load strategy code
-    setStrategyCode(JSON.stringify(strategy.strategyCode, null, 2));
-    
-    // Load configuration
-    setStrategyName(strategy.config.strategyName);
-    setStartDate(strategy.config.startDate);
-    setEndDate(strategy.config.endDate);
-    
-    // Load backtest results
-    setCompletedBacktest(strategy.backtestData);
-    
-    addTerminalLine(`> 📂 Loaded strategy: ${strategy.name}`);
-    setShowLoadModal(false);
+  const handleLoadSavedStrategy = async (strategy: StrategyListItem) => {
+    try {
+      // Load strategy code from config (already an object)
+      setStrategyCode(JSON.stringify(strategy.config, null, 2));
+      
+      // Set strategy name
+      setStrategyName(strategy.name);
+      
+      addTerminalLine(`> 📂 Loaded strategy: ${strategy.name}`);
+      setShowLoadModal(false);
+    } catch (error) {
+      console.error('Error loading strategy:', error);
+      addTerminalLine('> ❌ Failed to load strategy');
+    }
   };
 
-  const handleDeleteStrategy = async (id: string) => {
-    if (deleteSavedStrategy(id)) {
-      // Also delete ZIP file
-      await deleteZipFile(id);
-      setSavedStrategies(getSavedStrategies());
-      addTerminalLine('> 🗑️ Strategy and ZIP file deleted');
+  const handleDeleteStrategy = async (id: number) => {
+    try {
+      await api.strategy.deleteStrategy(id);
+      const strategies = await api.strategy.listStrategies();
+      setSavedStrategies(strategies);
+      addTerminalLine('> 🗑️ Strategy deleted from server');
+    } catch (error) {
+      console.error('Error deleting strategy:', error);
+      addTerminalLine('> ❌ Failed to delete strategy');
     }
   };
 
@@ -620,7 +622,6 @@ export default function BacktestPage() {
             infoPanelRef={infoPanelRef}
             showScrollButton={showScrollButton}
             scrollToBottom={scrollToBottom}
-            simulateBacktest={simulateBacktest}
             runServerBacktest={runServerBacktest}
             handleDownload={handleDownload}
             setShowDetailsModal={setShowDetailsModal}
@@ -718,76 +719,47 @@ export default function BacktestPage() {
           isOpen={showSaveModal}
           onClose={() => setShowSaveModal(false)}
           onSave={async (name, description) => {
+            setIsSavingStrategy(true);
             try {
-              addTerminalLine('> 📥 Downloading ZIP from server...');
+              addTerminalLine('> 💾 Saving strategy to server...');
               
-              // Download ZIP file from server first
-              let zipBlob: Blob | null = null;
-              let zipFileName: string | null = null;
+              // Prepare strategy config as object (not string)
+              const configObject = completedBacktest.strategy_code || {};
               
-              try {
-                zipBlob = await api.backtest.downloadResults(completedBacktest.id);
-                const stratName = typeof completedBacktest.strategy_code?.name === 'string'
-                  ? completedBacktest.strategy_code.name
-                  : 'backtest';
-                const strategyType = completedBacktest.strategy_type === 'dual' ? 'dual' : 'single';
-                const date = new Date().toISOString().split('T')[0];
-                zipFileName = `backtest_${strategyType}_${stratName.replace(/\s+/g, '_')}_${date}.zip`;
-                
-                addTerminalLine('> ✅ ZIP downloaded from server');
-              } catch (zipError) {
-                console.warn('Could not download ZIP file:', zipError);
-                addTerminalLine('> ⚠️ ZIP download failed, saving without archive');
-              }
-              
-              // Save strategy
-              const saved = saveStrategy(
+              // Create strategy on server
+              const result = await api.strategy.createStrategy({
                 name,
-                description,
-                completedBacktest,
-                completedBacktest.strategy_code || {},
-                { startDate, endDate, strategyName },
-                zipFileName || undefined
-              );
+                description: description || undefined,
+                config: configObject,
+              });
               
-              // Save ZIP file to IndexedDB
-              if (zipBlob && zipFileName) {
-                addTerminalLine('> 💾 Saving ZIP to storage...');
-                const zipSaved = await saveZipFile(saved.id, zipFileName, zipBlob);
-                if (zipSaved) {
-                  addTerminalLine('> ✅ ZIP saved successfully');
-                } else {
-                  addTerminalLine('> ⚠️ ZIP save failed');
+              addTerminalLine(`> ✅ Strategy created with ID: ${result.id}`);
+              
+              // Save analytics to strategy (if completedBacktest has analytics)
+              if (completedBacktest.analytics) {
+                try {
+                  await api.strategy.saveResults(result.id, completedBacktest.analytics);
+                  addTerminalLine('> ✅ Analytics saved to strategy');
+                } catch (analyticsError) {
+                  console.warn('Could not save analytics:', analyticsError);
+                  addTerminalLine('> ⚠️ Analytics save failed');
                 }
               }
               
-              setSavedStrategies(getSavedStrategies());
-              addTerminalLine(`> 💾 Strategy saved: ${saved.name}`);
+              // Reload strategies list
+              const strategies = await api.strategy.listStrategies();
+              setSavedStrategies(strategies);
+              
+              addTerminalLine(`> 💾 Strategy saved: ${name}`);
               setShowSaveModal(false);
             } catch (error) {
               console.error('Save strategy error:', error);
               addTerminalLine(`> ❌ Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-              
-              // Try to clear old strategies and retry
-              if (error instanceof Error && (error.message.includes('storage') || error.message.includes('too large'))) {
-                try {
-                  clearOldStrategies(1); // Keep only 1 newest strategy
-                  const saved = saveStrategy(
-                    name,
-                    description,
-                    completedBacktest,
-                    completedBacktest.strategy_code || {},
-                    { startDate, endDate, strategyName }
-                  );
-                  setSavedStrategies(getSavedStrategies());
-                  addTerminalLine(`> 💾 Strategy saved after cleanup: ${saved.name}`);
-                  setShowSaveModal(false);
-                } catch (retryError) {
-                  addTerminalLine(`> ❌ Save failed after cleanup: ${retryError instanceof Error ? retryError.message : 'Unknown error'}`);
-                }
-              }
+            } finally {
+              setIsSavingStrategy(false);
             }
           }}
+          isSaving={isSavingStrategy}
         />
       )}
 

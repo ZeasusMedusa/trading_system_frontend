@@ -42,8 +42,8 @@ export interface SavedStrategy {
   description?: string;
   createdAt: string;
   updatedAt: string;
-  backtestData: CompletedBacktest;
-  strategyCode: Record<string, unknown>;
+  strategyCode: Record<string, unknown>;  // Strategy JSON only
+  analytics?: Record<string, unknown>;     // Full analytics only
   config: {
     startDate: string;
     endDate: string;
@@ -51,4 +51,5 @@ export interface SavedStrategy {
   };
   hasZipFile?: boolean; // Indicates if ZIP file is available
   zipFileName?: string; // Name of the ZIP file
+  // Note: backtestData removed - only strategyCode and analytics stored
 }

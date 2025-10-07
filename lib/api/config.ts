@@ -45,6 +45,17 @@ export const ENDPOINTS = {
     DOWNLOAD: (jobId: string) => `/backtest/${jobId}/download`,
   },
 
+  // Strategies
+  STRATEGY: {
+    LIST: '/strategy/',
+    CREATE: '/strategy/',
+    ITEM: (strategyId: number | string) => `/strategy/${strategyId}`,
+    UPDATE: (strategyId: number | string) => `/strategy/${strategyId}`,
+    DELETE: (strategyId: number | string) => `/strategy/${strategyId}`,
+    SAVE_RESULTS: (strategyId: number | string) => `/strategy/${strategyId}/results`,
+    SAVE_BACKTEST_TO_STRATEGY: (jobId: string | number) => `/backtest/${jobId}/save-to-strategy`,
+  },
+
   // Admin
   ADMIN: {
     USERS: '/admin/users',

@@ -1,53 +1,28 @@
 'use client';
 
 import { useState } from 'react';
-import type { SavedStrategy } from '@/types/backtest';
-import { getZipFile } from '@/lib/zipStorage';
+import type { StrategyListItem } from '@/lib/api/endpoints/strategy';
 
 interface LoadStrategyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  strategies: SavedStrategy[];
-  onLoad: (strategy: SavedStrategy) => void;
-  onDelete: (id: string) => void;
+  strategies: StrategyListItem[];
+  onLoad: (strategy: StrategyListItem) => void;
+  onDelete: (id: number) => void;
 }
 
 export function LoadStrategyModal({ isOpen, onClose, strategies, onLoad, onDelete }: LoadStrategyModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
-  const handleDownloadZip = async (strategy: SavedStrategy) => {
-    setDownloadingId(strategy.id);
-    try {
-      const zipEntry = await getZipFile(strategy.id);
-      
-      if (!zipEntry) {
-        alert('ZIP файл не найден. Возможно, он был удален.');
-        return;
-      }
-      
-      // Create download link
-      const url = URL.createObjectURL(zipEntry.data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = zipEntry.fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      console.log('ZIP downloaded:', zipEntry.fileName);
-    } catch (error) {
-      console.error('Error downloading ZIP:', error);
-      alert('Ошибка при скачивании архива');
-    } finally {
-      setDownloadingId(null);
-    }
+  const handleDownloadZip = async (_strategy: StrategyListItem) => {
+    // ZIP download from local storage removed per backend integration; disable button
+    alert('ZIP download is managed by server now. Open details to download results.');
   };
 
   const filteredStrategies = strategies.filter(strategy =>
     strategy.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    strategy.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    (strategy.description || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const formatDate = (dateString: string) => {
@@ -106,34 +81,17 @@ export function LoadStrategyModal({ isOpen, onClose, strategies, onLoad, onDelet
                           {strategy.description}
                         </p>
                       )}
-                      <div className="flex items-center gap-4 text-xs text-gray-400">
-                        <span>📅 {formatDate(strategy.createdAt)}</span>
-                        <span>📊 PnL: {strategy.backtestData.total_pnl.toFixed(2)}</span>
-                        <span>📈 Winrate: {(strategy.backtestData.winrate * 100).toFixed(1)}%</span>
-                        <span>🎯 Trades: {strategy.backtestData.n_trades}</span>
-                        <span>⚡ Type: {strategy.backtestData.strategy_type || 'single'}</span>
-                      </div>
+                      {strategy.metrics && (
+                        <div className="flex items-center gap-4 text-xs text-gray-400">
+                          <span>📊 PnL: {Number((strategy.metrics as any).total_pnl ?? 0).toFixed(2)}</span>
+                          <span>📈 Winrate: {(((strategy.metrics as any).winrate ?? 0) * 100).toFixed(1)}%</span>
+                          <span>🎯 Trades: {(strategy.metrics as any).n_trades ?? 0}</span>
+                        </div>
+                      )}
                     </div>
                     
                     <div className="flex gap-2 ml-4">
-                      {strategy.hasZipFile && (
-                        <button
-                          onClick={() => handleDownloadZip(strategy)}
-                          disabled={downloadingId === strategy.id}
-                          className={`px-3 py-1.5 text-white text-sm rounded-lg transition-colors ${
-                            downloadingId === strategy.id
-                              ? 'bg-gray-600 cursor-not-allowed'
-                              : 'bg-green-600 hover:bg-green-700'
-                          }`}
-                          title="Download ZIP archive"
-                        >
-                          {downloadingId === strategy.id ? (
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          ) : (
-                            '📦'
-                          )}
-                        </button>
-                      )}
+                      {/* ZIP download is handled elsewhere now */}
                       <button
                         onClick={() => onLoad(strategy)}
                         className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
