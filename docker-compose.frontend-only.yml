@@ -10,12 +10,14 @@ services:
       dockerfile: Dockerfile.prod
     container_name: smiio_frontend
     restart: always
-    network_mode: "host"
     environment:
-      # Используем localhost так как network_mode: host
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      # Используем имя контейнера бэкенда (trading_app_prod)
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://trading_app_prod:8000}
       NODE_ENV: production
-      PORT: ${FRONTEND_PORT:-3000}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    networks:
+      - trading_network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
       interval: 30s
@@ -27,4 +29,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  trading_network:
+    external: true
+    name: trading_system_trading_network
 
