@@ -10,15 +10,12 @@ services:
       dockerfile: Dockerfile.prod
     container_name: smiio_frontend
     restart: always
+    network_mode: "host"
     environment:
-      # Используем host.docker.internal для доступа к бэкенду на хосте
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://host.docker.internal:8000}
+      # Используем localhost так как network_mode: host
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
       NODE_ENV: production
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    extra_hosts:
-      # Позволяет достучаться до localhost хост-машины
-      - "host.docker.internal:host-gateway"
+      PORT: ${FRONTEND_PORT:-3000}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
       interval: 30s
