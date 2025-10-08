@@ -1,10 +1,37 @@
 version: '3.8'
 
-# Конфигурация для фронтенда с подключением к удалённому бэкенду
-# Бэкенд работает в приватной сети "trading_internal_net" на том же сервере
+# Конфигурация для фронтенда с Nginx проксированием
 # Фронтенд доступен извне на порту 80, бэкенд - только внутри Docker сети
+# Nginx проксирует все API запросы к бэкенду
 
 services:
+  # Nginx для проксирования и статики
+  nginx:
+    image: nginx:alpine
+    container_name: smiio_nginx
+    restart: always
+    ports:
+      # Пробрасываем только порт 80 наружу
+      - "80:80"
+    volumes:
+      - ./nginx/nginx-frontend-only.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - trading_internal_net
+    depends_on:
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Фронтенд (Next.js)
   frontend:
     build:
       context: .
@@ -15,11 +42,8 @@ services:
       # Внутреннее имя бэкенда в Docker сети
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
       NODE_ENV: production
-    ports:
-      # Пробрасываем только порт 80 наружу
-      - "80:3000"
+    # НЕ пробрасываем порт наружу - только через Nginx
     networks:
-      # Подключаемся к приватной сети бэкенда
       - trading_internal_net
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
@@ -38,4 +62,3 @@ networks:
   trading_internal_net:
     external: true
     name: trading_internal_net
-

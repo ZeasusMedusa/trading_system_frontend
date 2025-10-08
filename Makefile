@@ -17,6 +17,12 @@ help:
 	@echo "  make prod-stop    - Stop production environment"
 	@echo "  make prod-restart - Restart production services"
 	@echo ""
+	@echo "Frontend Only (with remote backend):"
+	@echo "  make frontend-only     - Start frontend with Nginx proxy"
+	@echo "  make frontend-simple  - Start frontend without Nginx"
+	@echo "  make frontend-logs    - View frontend logs"
+	@echo "  make frontend-stop    - Stop frontend"
+	@echo ""
 	@echo "Build:"
 	@echo "  make build        - Build all Docker images"
 	@echo "  make build-prod   - Build production images"
@@ -66,6 +72,42 @@ prod-stop:
 
 prod-restart:
 	docker compose -f docker-compose.prod.yml restart
+
+# ===== Frontend Only (with remote backend) =====
+
+frontend-only:
+	@echo "🚀 Starting frontend with Nginx proxy..."
+	@if [ ! -f .env.production ]; then \
+		echo "❌ Error: .env.production not found!"; \
+		echo "📝 Copy env.frontend-only.example to .env.production and configure it."; \
+		exit 1; \
+	fi
+	docker compose -f docker-compose.frontend-with-nginx.yml --env-file .env.production up -d
+	@echo "✅ Frontend with Nginx started!"
+	@echo "🌐 Application: http://localhost"
+	@echo "📊 Status: docker compose -f docker-compose.frontend-with-nginx.yml ps"
+
+frontend-simple:
+	@echo "🚀 Starting frontend without Nginx..."
+	@if [ ! -f .env.production ]; then \
+		echo "❌ Error: .env.production not found!"; \
+		echo "📝 Copy env.frontend-only.example to .env.production and configure it."; \
+		exit 1; \
+	fi
+	docker compose -f docker-compose.frontend-only.yml --env-file .env.production up -d
+	@echo "✅ Frontend started!"
+	@echo "🌐 Application: http://localhost:3000"
+	@echo "📊 Status: docker compose -f docker-compose.frontend-only.yml ps"
+
+frontend-logs:
+	@echo "📋 Frontend logs:"
+	docker compose -f docker-compose.frontend-with-nginx.yml logs -f
+
+frontend-stop:
+	@echo "🛑 Stopping frontend..."
+	docker compose -f docker-compose.frontend-with-nginx.yml down
+	docker compose -f docker-compose.frontend-only.yml down
+	@echo "✅ Frontend stopped!"
 
 # ===== Build =====
 
